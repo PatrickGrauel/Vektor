@@ -84,11 +84,18 @@ globalThis.tally = {
     if (!isFinite(ratePerUSD) || ratePerUSD <= 0) return;
     const upper = String(code).toUpperCase();
     const lower = upper.toLowerCase();
+    // math.js's createUnit accepts override via the THIRD argument
+    // (`(name, definition, options)`). Passing
+    // `{ definition: ..., override: true }` as the single second argument
+    // looks reasonable, but math.js treats it as the definition object and
+    // silently throws "unit already exists" — leaving stale 1:1 placeholder
+    // rates in place and producing `1 EUR in USD = 1 USD` even after FX
+    // rates load. See https://mathjs.org/docs/datatypes/units.html.
     try {
-      math.createUnit(upper, { definition: `${1 / ratePerUSD} USD`, override: true });
+      math.createUnit(upper, `${1 / ratePerUSD} USD`, { override: true });
     } catch (e) { /* ignore */ }
     if (lower !== upper) {
-      try { math.createUnit(lower, { definition: `1 ${upper}`, override: true }); } catch (e) {}
+      try { math.createUnit(lower, `1 ${upper}`, { override: true }); } catch (e) {}
     }
   },
 
@@ -98,7 +105,7 @@ globalThis.tally = {
    *  variable assignments like `b = 5000 EUR` still work without a key. */
   initBaseCurrencies() {
     try { math.createUnit("USD"); } catch (e) {}
-    try { math.createUnit("usd", { definition: "1 USD", override: true }); } catch (e) {}
+    try { math.createUnit("usd", "1 USD", { override: true }); } catch (e) {}
   },
 
   /** ISO codes we accept as currencies (matches OpenExchangeRates' list). */
@@ -158,7 +165,7 @@ globalThis.tally = {
    */
   initAviationUnits() {
     const add = (name, def) => {
-      try { math.createUnit(name, { definition: def, override: true }); } catch (e) {}
+      try { math.createUnit(name, def, { override: true }); } catch (e) {}
     };
     // ── Aviation ────────────────────────────────────────────────
     add("NM",   "1852 m");
@@ -306,7 +313,7 @@ globalThis.tally = {
       light_year: "9.4607304725808e15 m"
     };
     Object.entries(plural).forEach(([word, def]) => {
-      try { math.createUnit(word, { definition: `1 ${def}`, override: true }); } catch (e) {}
+      try { math.createUnit(word, `1 ${def}`, { override: true }); } catch (e) {}
     });
   },
 
