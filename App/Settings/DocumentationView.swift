@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Human-written manual for Sumi. Opened from Preferences via a "Documentation"
+/// Human-written manual for Tally. Opened from Preferences via a "Documentation"
 /// button. Single scrollable view with a sidebar for jumping between sections.
 /// The tone is conversational and concrete: examples first, prose second.
 struct DocumentationView: View {
@@ -44,7 +44,7 @@ struct DocumentationView: View {
                 .frame(maxWidth: 720, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(SumiTheme.background)
+            .background(TallyTheme.background)
         }
         .frame(minWidth: 760, minHeight: 520)
         .toolbar {
@@ -52,7 +52,7 @@ struct DocumentationView: View {
                 Button("Done") { dismiss() }
             }
         }
-        .navigationTitle("Sumi documentation")
+        .navigationTitle("Tally documentation")
         .themedSheet()
     }
 
@@ -79,7 +79,7 @@ struct DocumentationView: View {
 
     private var basicsSection: some View {
         Doc(title: "Type math, see the answer") {
-            Doc_.paragraph("Sumi is a calculator that works the way you'd write things on a napkin. There's no equals key — you just type and Sumi computes as you go. The answer for each line appears on the right.")
+            Doc_.paragraph("Tally is a calculator that works the way you'd write things on a napkin. There's no equals key — you just type and Tally computes as you go. The answer for each line appears on the right.")
             Doc_.code("""
             2 + 2
             8 times 9
@@ -115,7 +115,7 @@ struct DocumentationView: View {
 
     private var percentSection: some View {
         Doc(title: "Percentages") {
-            Doc_.paragraph("Sumi knows the shapes percentages usually take in spoken math:")
+            Doc_.paragraph("Tally knows the shapes percentages usually take in spoken math:")
             Doc_.code("""
             20% of 50          →  10
             100 - 5%           →  95
@@ -152,7 +152,7 @@ struct DocumentationView: View {
 
     private var unitsSection: some View {
         Doc(title: "Units") {
-            Doc_.paragraph("Sumi understands physical units and mixes them freely. Conversion uses `in` or `to` — both mean the same thing.")
+            Doc_.paragraph("Tally understands physical units and mixes them freely. Conversion uses `in` or `to` — both mean the same thing.")
             Doc_.code("""
             1 m + 50 cm           →  1.5 m
             3 ft 6 in in cm       →  106.68 cm
@@ -161,17 +161,17 @@ struct DocumentationView: View {
             500 hPa in inHg       →  14.77 inHg
             FL250 in ft           →  25 000 ft
             """)
-            Doc_.paragraph("The categories Sumi knows about:")
+            Doc_.paragraph("The categories Tally knows about:")
             Doc_.table([
                 ["Length",      "m, km, cm, mm, μm, nm, in, ft, yd, mi, NM (nautical mile), parsec, ly, AU, fathom, furlong"],
                 ["Mass",        "g, kg, mg, oz, lb, ton, stone, carat (ct)"],
-                ["Volume",      "L, mL, dL, gallon, imperial_gallon, pint, quart, cup, tbsp, tsp"],
+                ["Volume",      "L, mL, dL, gallon, igallon (imperial), pint, ipint, quart, cup, tbsp, tsp"],
                 ["Time",        "s, min, h, day, week, month, year"],
                 ["Temperature", "K, degC (°C), degF (°F)"],
                 ["Pressure",    "Pa, kPa, hPa, mbar, bar, atm, psi, inHg, mmHg, torr"],
                 ["Speed",       "m/s, km/h (kmh, kph), mph, kt (kts, kn)"],
                 ["Force",       "N, dyne, lbf, kp (kilopond), kgf"],
-                ["Energy",      "J, kJ, MJ, BTU, Wh, kWh, MWh, GWh, cal_unit, Cal (kcal)"],
+                ["Energy",      "J, kJ, MJ, BTU, Wh, kWh, MWh, GWh, cal (gram cal), Cal (kcal)"],
                 ["Power",       "W, kW, MW, hp, ps (metric hp)"],
                 ["Frequency",   "Hz, kHz, MHz, GHz, rpm"],
                 ["Data",        "bit (b), byte (B), KB, MB, GB, KiB, MiB, GiB, kbps, Mbps, Gbps"],
@@ -189,7 +189,7 @@ struct DocumentationView: View {
             $500 + 200 GBP in EUR
             1 BTC in USD
             """)
-            Doc_.paragraph("Live rates come from OpenExchangeRates. Paste a free API key into Preferences → Foreign exchange and Sumi refreshes hourly. Without a key, currency arithmetic still works — assignments stick, math composes — but conversion ratios default to 1:1 until rates load.")
+            Doc_.paragraph("Live rates come from OpenExchangeRates. Paste a free API key into Preferences → Foreign exchange and Tally refreshes hourly. Without a key, currency arithmetic still works — assignments stick, math composes — but conversion ratios default to 1:1 until rates load.")
         }
     }
 
@@ -280,7 +280,7 @@ struct DocumentationView: View {
                 ["**Weather**",    "Orange for BR/HZ/SN · red for TS / FZRA / +RA / VA / DS"]
             ])
 
-            Doc_.paragraph("Sumi caches METARs and TAFs on disk. METARs older than 24 hours are pruned automatically. TAFs are kept only as long as they're still inside their validity period — once a forecast expires *and* it's older than 24 hours, it's removed.")
+            Doc_.paragraph("Tally caches METARs and TAFs on disk. METARs older than 24 hours are pruned automatically. TAFs are kept only as long as they're still inside their validity period — once a forecast expires *and* it's older than 24 hours, it's removed.")
         }
     }
 
@@ -293,11 +293,11 @@ struct DocumentationView: View {
 
     private var menubarSection: some View {
         Doc(title: "Menu bar") {
-            Doc_.paragraph("Sumi puts a small equals-with-heading-bug glyph in the macOS menu bar.")
+            Doc_.paragraph("Tally puts a small equals-with-heading-bug glyph in the macOS menu bar.")
             Doc_.table([
                 ["Left-click",  "Show or hide the window. The window follows you to the current Space."],
                 ["Right-click", "Open / Preferences… / Menu Bar Only Mode / Quit."],
-                ["Menu Bar Only Mode", "Hides the Dock icon. Sumi becomes a menu-bar-only app — reopen via the icon."]
+                ["Menu Bar Only Mode", "Hides the Dock icon. Tally becomes a menu-bar-only app — reopen via the icon."]
             ])
         }
     }
@@ -329,7 +329,7 @@ private struct Doc<Content: View>: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(SumiTheme.text)
+                .foregroundStyle(TallyTheme.text)
             content()
         }
     }
@@ -346,7 +346,7 @@ private struct DocParagraph: View {
     var body: some View {
         Text(.init(markdown))
             .font(.system(size: 13.5))
-            .foregroundStyle(SumiTheme.text)
+            .foregroundStyle(TallyTheme.text)
             .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -358,9 +358,9 @@ private struct DocCode: View {
         ScrollView(.horizontal, showsIndicators: false) {
             Text(block)
                 .font(.system(size: 12.5, design: .monospaced))
-                .foregroundStyle(SumiTheme.text)
+                .foregroundStyle(TallyTheme.text)
                 .padding(12)
-                .background(SumiTheme.surface)
+                .background(TallyTheme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
     }
@@ -375,18 +375,18 @@ private struct DocTable: View {
                     ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
                         Text(.init(cell))
                             .font(.system(size: 12.5))
-                            .foregroundStyle(SumiTheme.text)
+                            .foregroundStyle(TallyTheme.text)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding(.vertical, 6)
                 if idx < rows.count - 1 {
-                    Divider().background(SumiTheme.muted.opacity(0.2))
+                    Divider().background(TallyTheme.muted.opacity(0.2))
                 }
             }
         }
         .padding(12)
-        .background(SumiTheme.surface.opacity(0.4))
+        .background(TallyTheme.surface.opacity(0.4))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
@@ -397,10 +397,10 @@ private struct DocBullets: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(items, id: \.self) { item in
                 HStack(alignment: .top, spacing: 8) {
-                    Text("·").foregroundStyle(SumiTheme.muted)
+                    Text("·").foregroundStyle(TallyTheme.muted)
                     Text(.init(item))
                         .font(.system(size: 13.5))
-                        .foregroundStyle(SumiTheme.text)
+                        .foregroundStyle(TallyTheme.text)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

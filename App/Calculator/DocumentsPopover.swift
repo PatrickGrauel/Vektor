@@ -13,14 +13,14 @@ struct DocumentsPopover: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
                 TextField("Search calculations", text: $search)
                     .textFieldStyle(.plain)
-                    .foregroundStyle(SumiTheme.text)
+                    .foregroundStyle(TallyTheme.text)
                     .focused($searchFocused)
             }
             .padding(8)
-            .background(SumiTheme.codeSurface)
+            .background(TallyTheme.codeSurface)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .padding([.horizontal, .top], 8)
 
@@ -30,12 +30,12 @@ struct DocumentsPopover: View {
                     VStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .font(.title2)
-                            .foregroundStyle(SumiTheme.muted)
+                            .foregroundStyle(TallyTheme.muted)
                         Text(search.isEmpty
                              ? "No calculations yet."
                              : "No calculations match '\(search)'.")
                             .font(.callout)
-                            .foregroundStyle(SumiTheme.muted)
+                            .foregroundStyle(TallyTheme.muted)
                             .multilineTextAlignment(.center)
                     }
                     .padding(.vertical, 32)
@@ -65,7 +65,7 @@ struct DocumentsPopover: View {
 }
 
 private struct DocumentRow: View {
-    let doc: SumiDocument
+    let doc: TallyDocument
     let isSelected: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
@@ -77,12 +77,12 @@ private struct DocumentRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(doc.title)
                     .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(SumiTheme.text)
+                    .foregroundStyle(TallyTheme.text)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Text(doc.updatedAt, style: .relative)
                     .font(.caption2)
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -93,7 +93,7 @@ private struct DocumentRow: View {
                 onDelete()
             } label: {
                 Image(systemName: "trash")
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
@@ -104,7 +104,7 @@ private struct DocumentRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(isSelected ? SumiTheme.surface : Color.clear)
+        .background(isSelected ? TallyTheme.surface : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }

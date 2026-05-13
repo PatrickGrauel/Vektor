@@ -2,14 +2,14 @@ import SwiftUI
 import AppKit
 
 @main
-struct SumiApp: App {
+struct TallyApp: App {
     @StateObject private var model = AppModel()
     @StateObject private var menuBarBoot = MenuBarBoot()
     @Environment(\.openWindow) private var openWindow
-    @AppStorage("sumi.alwaysOnTop") private var alwaysOnTop: Bool = false
+    @AppStorage("tally.alwaysOnTop") private var alwaysOnTop: Bool = false
 
     var body: some Scene {
-        WindowGroup("Sumi", id: "main") {
+        WindowGroup("Tally", id: "main") {
             ContentView()
                 .environmentObject(model)
                 .frame(minWidth: 760, minHeight: 520)

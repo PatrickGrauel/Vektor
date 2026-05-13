@@ -4,11 +4,11 @@ import Charts
 struct LoanForm: View {
     @EnvironmentObject private var store: LoanStore
 
-    @AppStorage("sumi.finance.loan.principal")    private var principal: Double = 300_000
-    @AppStorage("sumi.finance.loan.rate")         private var ratePercent: Double = 5.5
-    @AppStorage("sumi.finance.loan.term")         private var termYears: Double = 30
-    @AppStorage("sumi.finance.loan.currency")     private var currency: String = "USD"
-    @AppStorage("sumi.finance.loan.extraMonthly") private var extraMonthly: Double = 0
+    @AppStorage("tally.finance.loan.principal")    private var principal: Double = 300_000
+    @AppStorage("tally.finance.loan.rate")         private var ratePercent: Double = 5.5
+    @AppStorage("tally.finance.loan.term")         private var termYears: Double = 30
+    @AppStorage("tally.finance.loan.currency")     private var currency: String = "USD"
+    @AppStorage("tally.finance.loan.extraMonthly") private var extraMonthly: Double = 0
 
     @State private var compareID: UUID? = nil
     @State private var showSaveSheet = false
@@ -74,7 +74,7 @@ struct LoanForm: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
         .sheet(isPresented: $showSaveSheet) {
             SaveScenarioSheet(
                 title: "Save loan scenario",
@@ -196,8 +196,8 @@ struct LoanForm: View {
             }
             .chartLegend(position: .bottom, alignment: .leading)
             .chartForegroundStyleScale([
-                "Principal": SumiTheme.accent.opacity(0.6),
-                "Interest":  SumiTheme.statusBad.opacity(0.3)
+                "Principal": TallyTheme.accent.opacity(0.6),
+                "Interest":  TallyTheme.statusBad.opacity(0.3)
             ])
             .frame(height: 180)
         }

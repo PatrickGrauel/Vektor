@@ -1,11 +1,11 @@
 import SwiftUI
 
 struct TipForm: View {
-    @AppStorage("sumi.finance.tip.bill")     private var bill: Double = 86.50
-    @AppStorage("sumi.finance.tip.percent")  private var tipPercent: Double = 18
-    @AppStorage("sumi.finance.tip.people")   private var people: Int = 2
-    @AppStorage("sumi.finance.tip.currency") private var currency: String = "USD"
-    @AppStorage("sumi.finance.tip.roundUp")  private var roundUp: Bool = false
+    @AppStorage("tally.finance.tip.bill")     private var bill: Double = 86.50
+    @AppStorage("tally.finance.tip.percent")  private var tipPercent: Double = 18
+    @AppStorage("tally.finance.tip.people")   private var people: Int = 2
+    @AppStorage("tally.finance.tip.currency") private var currency: String = "USD"
+    @AppStorage("tally.finance.tip.roundUp")  private var roundUp: Bool = false
 
     var body: some View {
         Form {
@@ -78,6 +78,6 @@ struct TipForm: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
     }
 }

@@ -1,10 +1,10 @@
 import SwiftUI
-import SumiAviation
+import TallyAviation
 
 struct DensityAltitudeTab: View {
-    @AppStorage("sumi.e6b.da.indAlt")    private var indicatedAlt: Double = 5000
-    @AppStorage("sumi.e6b.da.altimeter") private var altimeter: Double = 29.92
-    @AppStorage("sumi.e6b.da.oat")       private var oat: Double = 25
+    @AppStorage("tally.e6b.da.indAlt")    private var indicatedAlt: Double = 5000
+    @AppStorage("tally.e6b.da.altimeter") private var altimeter: Double = 29.92
+    @AppStorage("tally.e6b.da.oat")       private var oat: Double = 25
 
     var body: some View {
         Form {

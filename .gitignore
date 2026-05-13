@@ -17,10 +17,13 @@ xcuserdata/
 Package.resolved
 
 # Generated project (regenerated from project.yml)
-Sumi.xcodeproj/
+Tally.xcodeproj/
 
 # Generated JS bundle (regenerated from Vendor/numi by Scripts/bundle-numi.sh)
-Packages/SumiEngine/Sources/SumiEngine/Resources/numi.bundle.js
+Packages/TallyEngine/Sources/TallyEngine/Resources/numi.bundle.js
+
+# Claude Code worktrees and session state
+.claude/
 
 # Node (for esbuild bundling)
 node_modules/

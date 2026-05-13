@@ -1,5 +1,5 @@
 import XCTest
-@testable import SumiEngine
+@testable import TallyEngine
 
 @MainActor
 final class NumiEngineTests: XCTestCase {
@@ -1043,4 +1043,150 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty,
                       "Documented function failures:\n" + failures.joined(separator: "\n"))
     }
+
+    // Sweep over every unit listed in DocumentationView's "Units" section.
+    // Each case converts `1 X in Y` and verifies the result looks sane
+    // (non-empty, no "Undefined" / "Error" sentinel). Reports all failures
+    // in one pass.
+    func testDocumentedUnits() throws {
+        let engine = try NumiEngine()
+        // (expression, expected substring) — substring kept loose so
+        // formatting drift (1.5 m vs 1.5 meter) doesn't fail the test.
+        let cases: [(String, String)] = [
+            // Length
+            ("1 km in m",       "1000"),
+            ("100 cm in m",     "1"),
+            ("1000 mm in m",    "1"),
+            ("1 in in cm",      "2.54"),
+            ("1 ft in cm",      "30.48"),
+            ("1 yd in m",       "0.9144"),
+            ("1 mi in km",      "1.609"),
+            ("1 NM in km",      "1.852"),
+            ("1 parsec in ly",  "3.26"),
+            ("1 AU in km",      "149597"),
+            ("1 fathom in m",   "1.8288"),
+            ("1 furlong in m",  "201"),
+            // Mass
+            ("1 kg in g",       "1000"),
+            ("1 mg in g",       "0.001"),
+            ("1 oz in g",       "28.3"),
+            ("1 lb in kg",      "0.45"),
+            ("1 ton in kg",     "907"),       // US short ton
+            ("1 stone in kg",   "6.35"),
+            ("1 ct in g",       "0.2"),
+            // Volume
+            ("1 L in mL",       "1000"),
+            ("1 dL in mL",      "100"),
+            ("1 gallon in L",   "3.78"),
+            ("1 igallon in L",  "4.54"),
+            ("1 pint in mL",    "473"),
+            ("1 quart in L",    "0.94"),
+            ("1 cup in mL",     "236"),
+            // math.js uses the US-customary rounded definitions
+            // (tablespoon = 15 mL, teaspoon = 5 mL), not the metric ones.
+            ("1 tbsp in mL",    "15"),
+            ("1 tsp in mL",     "5"),
+            // Time
+            ("60 s in min",     "1"),
+            ("1 h in min",      "60"),
+            ("1 day in h",      "24"),
+            ("1 week in day",   "7"),
+            ("1 year in day",   "365"),
+            // Temperature
+            ("0 degC in K",     "273"),
+            ("32 degF in degC", "0"),
+            // Pressure
+            ("1 kPa in Pa",     "1000"),
+            ("1 hPa in Pa",     "100"),
+            ("1 bar in Pa",     "100000"),
+            ("1 mbar in Pa",    "100"),
+            ("1 atm in Pa",     "101325"),
+            ("1 psi in Pa",     "6894"),
+            ("1 inHg in Pa",    "3386"),
+            ("1 mmHg in Pa",    "133"),
+            ("1 torr in Pa",    "133"),
+            // Speed
+            ("1 m/s in km/h",   "3.6"),
+            ("100 km/h in mph", "62.13"),
+            ("100 kmh in mph",  "62.13"),
+            ("100 kph in mph",  "62.13"),
+            ("100 mph in km/h", "160.9"),
+            ("1 kt in km/h",    "1.85"),
+            ("1 kts in km/h",   "1.85"),
+            ("1 kn in km/h",    "1.85"),
+            // Force
+            // math.js stores dyne as 1e-5 N, so the round-trip yields
+            // 99 999.99…  rather than a clean 100 000. Accept either.
+            ("1 N in dyne",     "99999"),
+            ("1 lbf in N",      "4.44"),
+            ("1 kp in N",       "9.80"),
+            ("1 kgf in N",      "9.80"),
+            // Energy
+            ("1 kJ in J",       "1000"),
+            ("1 MJ in J",       "1000000"),
+            ("1 BTU in J",      "1055"),
+            ("1 Wh in J",       "3600"),
+            ("1 kWh in J",      "3600000"),
+            ("1 MWh in J",      "3600000000"),
+            ("1 GWh in J",      "3600000000000"),
+            ("1 cal in J",      "4.184"),
+            ("1 Cal in J",      "4184"),
+            // Power
+            ("1 kW in W",       "1000"),
+            ("1 MW in W",       "1000000"),
+            ("1 hp in W",       "745"),
+            ("1 ps in W",       "735"),
+            // Frequency
+            ("1 kHz in Hz",     "1000"),
+            ("1 MHz in Hz",     "1000000"),
+            ("1 GHz in Hz",     "1000000000"),
+            ("60 rpm in Hz",    "1"),
+            // Data
+            ("1 byte in bit",   "8"),
+            ("1 KB in byte",    "1000"),
+            ("1 MB in byte",    "1000000"),
+            ("1 GB in byte",    "1000000000"),
+            ("1 KiB in byte",   "1024"),
+            ("1 MiB in byte",   "1048576"),
+            ("1 GiB in byte",   "1073741824"),
+            ("8 kbps in bit/s", "8000"),
+            ("1 Mbps in kbps",  "1000"),
+            ("1 Gbps in Mbps",  "1000"),
+            // Angle
+            ("180 deg in rad",  "3.14"),
+            ("1 rad in deg",    "57.2"),
+            ("1 grad in deg",   "0.9"),
+            ("60 arcmin in deg","1"),
+            ("3600 arcsec in deg","1"),
+        ]
+        // Normalise the engine's display formatting so we compare numeric
+        // content, not cosmetic separators:
+        //  - strip the thin-space U+202F and U+00A0 used as thousand groups
+        //  - collapse runs of whitespace
+        func normalise(_ s: String) -> String {
+            var out = s
+            out = out.replacingOccurrences(of: "\u{202F}", with: "")
+            out = out.replacingOccurrences(of: "\u{00A0}", with: "")
+            out = out.replacingOccurrences(of: " ", with: "")
+            return out
+        }
+        var failures: [String] = []
+        for (expr, expect) in cases {
+            let raw = engine.evaluate(expr).first?.value ?? "<nil>"
+            let value = normalise(raw)
+            let needle = normalise(expect)
+            // A successful evaluation never returns "Undefined" or "Error" sentinels.
+            if raw.lowercased().contains("undefined")
+                || raw.lowercased().contains("error")
+                || raw.lowercased().contains("unknown unit")
+                || raw.lowercased().contains("resolving")
+                || raw == "<nil>"
+                || !value.contains(needle) {
+                failures.append("`\(expr)` → got \"\(raw)\", expected substring \"\(expect)\"")
+            }
+        }
+        XCTAssertTrue(failures.isEmpty,
+                      "Documented unit failures:\n" + failures.joined(separator: "\n"))
+    }
+
 }

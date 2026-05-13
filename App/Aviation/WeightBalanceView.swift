@@ -1,5 +1,5 @@
 import SwiftUI
-import SumiAviation
+import TallyAviation
 
 struct WeightBalanceView: View {
     @StateObject private var store = AircraftStore.aircraft()
@@ -18,7 +18,7 @@ struct WeightBalanceView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
         .sheet(isPresented: $showSaveSheet) {
             SaveAircraftSheet(initialName: profileName) { name in
                 let saved = SavedAircraft(
@@ -104,7 +104,7 @@ struct WeightBalanceView: View {
                             stations.removeAll { $0.id == st.id }
                         } label: {
                             Image(systemName: "minus.circle.fill")
-                                .foregroundStyle(SumiTheme.statusBad)
+                                .foregroundStyle(TallyTheme.statusBad)
                         }
                         .buttonStyle(.plain)
                         .help("Remove this station")
@@ -244,7 +244,7 @@ private struct SaveAircraftSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Save aircraft profile").font(.headline).foregroundStyle(SumiTheme.text)
+            Text("Save aircraft profile").font(.headline).foregroundStyle(TallyTheme.text)
             TextField("Aircraft name (e.g. 'My PA-28-181 N12345')", text: $name)
                 .textFieldStyle(.roundedBorder)
             HStack {

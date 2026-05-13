@@ -1,6 +1,6 @@
 import Foundation
 import JavaScriptCore
-import SumiAviation
+import TallyAviation
 
 /// Registers aviation-flavoured functions inside math.js so they can be
 /// called from calculator expressions:

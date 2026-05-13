@@ -1,7 +1,7 @@
 import XCTest
-@testable import SumiAviation
+@testable import TallyAviation
 
-final class SumiAviationTests: XCTestCase {
+final class TallyAviationTests: XCTestCase {
 
     // MARK: Atmosphere
 

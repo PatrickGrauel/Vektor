@@ -1,19 +1,19 @@
 import SwiftUI
 import AppKit
 
-/// Sumi's brand mark: two horizontal pill bars (the equals sign) with a small
+/// Tally's brand mark: two horizontal pill bars (the equals sign) with a small
 /// downward-pointing heading-bug triangle sitting on top of the upper bar.
 ///
 /// Designed as a SwiftUI Shape so it renders crisp at any size, in any colour.
 /// Used as the toolbar pane-switcher glyph (in tinted form) and as the menu
 /// bar status-item template (matches the macOS app icon design).
-struct SumiGlyph: Shape {
+struct TallyGlyph: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let w = rect.width, h = rect.height
 
         // Geometric proportions taken from the 1024×1024 master in
-        // icon/renders/Sumi-Concept-2-Equals-HeadingBug-1024.png.
+        // icon/renders/Tally-Concept-2-Equals-HeadingBug-1024.png.
         let barWidth = w * 0.65
         let barHeight = h * 0.13
         let barX = (w - barWidth) / 2
@@ -47,7 +47,7 @@ struct SumiGlyph: Shape {
     }
 }
 
-extension SumiGlyph {
+extension TallyGlyph {
     /// Bitmap version of the glyph for places where SwiftUI Shape-in-Menu
     /// label renders unreliably (the toolbar pane-switcher Menu would
     /// otherwise collapse to a hairline). Renders at 2× for retina crispness.

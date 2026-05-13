@@ -1,9 +1,9 @@
 import Foundation
 import SwiftUI
 
-/// A single Sumi document — multi-line text whose first non-empty line acts
+/// A single Tally document — multi-line text whose first non-empty line acts
 /// as the title. Persisted as a list in UserDefaults.
-struct SumiDocument: Identifiable, Codable, Equatable {
+struct TallyDocument: Identifiable, Codable, Equatable {
     var id: UUID
     var content: String
     var updatedAt: Date
@@ -33,18 +33,18 @@ struct SumiDocument: Identifiable, Codable, Equatable {
 
 @MainActor
 final class DocumentStore: ObservableObject {
-    @Published var documents: [SumiDocument]
+    @Published var documents: [TallyDocument]
     @Published var selectedID: UUID
 
-    private static let storageKey = "sumi.documents.v1"
-    private static let lastSelectedKey = "sumi.documents.lastSelected"
+    private static let storageKey = "tally.documents.v1"
+    private static let lastSelectedKey = "tally.documents.lastSelected"
 
     init() {
         let loaded = Self.load()
-        var initial: [SumiDocument]
+        var initial: [TallyDocument]
         if loaded.isEmpty {
-            let first = SumiDocument(content: """
-            # Welcome to Sumi
+            let first = TallyDocument(content: """
+            # Welcome to Tally
             // Type anywhere; results appear in the gutter on the right.
 
             # Arithmetic & natural language
@@ -106,7 +106,7 @@ final class DocumentStore: ObservableObject {
         // file, future migration that allows zero docs), seed a fresh one
         // so the rest of the store can rely on at least one document.
         if initial.isEmpty {
-            initial = [SumiDocument(content: "")]
+            initial = [TallyDocument(content: "")]
         }
         self.documents = initial
 
@@ -127,7 +127,7 @@ final class DocumentStore: ObservableObject {
 
     // MARK: - Selection
 
-    var selected: SumiDocument {
+    var selected: TallyDocument {
         get { documents.first(where: { $0.id == selectedID }) ?? documents[0] }
         set {
             guard let idx = documents.firstIndex(where: { $0.id == newValue.id }) else { return }
@@ -152,8 +152,8 @@ final class DocumentStore: ObservableObject {
     }
 
     @discardableResult
-    func newDocument() -> SumiDocument {
-        let doc = SumiDocument(content: "")
+    func newDocument() -> TallyDocument {
+        let doc = TallyDocument(content: "")
         documents.insert(doc, at: 0)
         selectedID = doc.id
         UserDefaults.standard.set(doc.id.uuidString, forKey: Self.lastSelectedKey)
@@ -171,7 +171,7 @@ final class DocumentStore: ObservableObject {
         persist()
     }
 
-    func filtered(searching query: String) -> [SumiDocument] {
+    func filtered(searching query: String) -> [TallyDocument] {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return documents }
         return documents.filter { $0.content.localizedCaseInsensitiveContains(q) }
@@ -185,9 +185,9 @@ final class DocumentStore: ObservableObject {
         }
     }
 
-    private static func load() -> [SumiDocument] {
+    private static func load() -> [TallyDocument] {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([SumiDocument].self, from: data)
+              let decoded = try? JSONDecoder().decode([TallyDocument].self, from: data)
         else { return [] }
         return decoded
     }

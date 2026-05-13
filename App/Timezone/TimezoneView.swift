@@ -1,6 +1,6 @@
 import SwiftUI
 import MapKit
-import SumiEngine
+import TallyEngine
 
 /// A city the user has pinned for quick reference. Stored in UserDefaults
 /// as a JSON-encoded array. `timeZoneId` is optional for backward-compat
@@ -124,7 +124,7 @@ struct CityCatalog {
 final class PinnedCityStore: ObservableObject {
     @Published var cities: [PinnedCity]
 
-    private static let storageKey = "sumi.timezone.cities"
+    private static let storageKey = "tally.timezone.cities"
 
     init() {
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
@@ -191,7 +191,7 @@ struct TimezoneView: View {
     /// the pane are "what time is it in X?" / "convert this moment", not
     /// "find a slot for everyone." Persisted so a user who reaches for
     /// the scheduler regularly doesn't have to re-open it every launch.
-    @AppStorage("sumi.timezone.schedulerExpanded") private var schedulerExpanded: Bool = false
+    @AppStorage("tally.timezone.schedulerExpanded") private var schedulerExpanded: Bool = false
 
     private let bridge = TimezoneBridge()
     private let cityClock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
@@ -214,7 +214,7 @@ struct TimezoneView: View {
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
         }
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
         .onChange(of: sourceCity) { _, _ in recompute() }
         .onChange(of: targetCity) { _, _ in recompute() }
         .onChange(of: cursor)     { _, _ in recompute() }
@@ -342,11 +342,11 @@ struct TimezoneView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "calendar.badge.clock")
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                     Text("Meeting scheduler")
                     Spacer()
                     Image(systemName: schedulerExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                         .font(.caption.weight(.semibold))
                 }
                 .contentShape(Rectangle())
@@ -365,10 +365,10 @@ struct TimezoneView: View {
             Divider().padding(.vertical, 4)
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(SumiTheme.statusCaution)
+                    .foregroundStyle(TallyTheme.statusCaution)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(city.name) shifts its clock \(dstRelative(when))")
-                        .foregroundStyle(SumiTheme.text)
+                        .foregroundStyle(TallyTheme.text)
                     Text("Recurring meetings that cross this date may not line up the same way after the transition.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -391,7 +391,7 @@ struct TimezoneView: View {
         if let feedback = calendarFeedback {
             Text(feedback)
                 .font(.caption)
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
         }
     }
 
@@ -411,7 +411,7 @@ struct TimezoneView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
                 .help("Swap From and To")
                 .accessibilityLabel("Swap source and target cities")
                 cityPicker(label: "To", selection: $targetCity)
@@ -423,7 +423,7 @@ struct TimezoneView: View {
                     if let label = dayShiftLabel {
                         Text(label)
                             .font(.caption2)
-                            .foregroundStyle(SumiTheme.accent)
+                            .foregroundStyle(TallyTheme.accent)
                     }
                 }
             }
@@ -515,9 +515,9 @@ struct TimezoneView: View {
     }
 
     private func createCalendarEvent(_ options: CalendarSaveOptions) async {
-        let snippet = SchedulingSnippet.format(store.cities, at: cursor)
+        let snippet = SchedulingSnippet.format(store.cities, at: options.startsAt)
         let outcome = await CalendarExporter.create(
-            date: cursor,
+            date: options.startsAt,
             notes: snippet,
             options: options
         )
@@ -617,12 +617,12 @@ private struct PinnedCityRow: View {
     var body: some View {
         HStack {
             Image(systemName: "mappin.circle.fill")
-                .foregroundStyle(SumiTheme.accent)
+                .foregroundStyle(TallyTheme.accent)
             VStack(alignment: .leading, spacing: 1) {
                 Text(city.name)
                 Text(workingHoursLabel)
                     .font(.caption2)
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
             }
             Spacer()
             Text(formattedNow)
@@ -631,7 +631,7 @@ private struct PinnedCityRow: View {
                 .id(refreshTrigger)
             Button { onRemove() } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
@@ -661,7 +661,7 @@ private struct CityPickerSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Add city").font(.headline).foregroundStyle(SumiTheme.text)
+                Text("Add city").font(.headline).foregroundStyle(TallyTheme.text)
                 Spacer()
                 Button("Cancel") { dismiss() }
             }.padding()
@@ -688,14 +688,14 @@ private struct CityPickerSheet: View {
                     onPick(pinned)
                 } label: {
                     HStack {
-                        Image(systemName: "mappin.circle.fill").foregroundStyle(SumiTheme.accent)
-                        Text(city.name).foregroundStyle(SumiTheme.text)
+                        Image(systemName: "mappin.circle.fill").foregroundStyle(TallyTheme.accent)
+                        Text(city.name).foregroundStyle(TallyTheme.text)
                         Spacer()
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(SumiTheme.background)
+                .listRowBackground(TallyTheme.background)
             }
             .scrollContentBackground(.hidden)
         }
@@ -730,13 +730,13 @@ private struct AddPinFromCoordSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Pin this location").font(.headline).foregroundStyle(SumiTheme.text)
+            Text("Pin this location").font(.headline).foregroundStyle(TallyTheme.text)
             Text(String(format: "%.4f, %.4f", coordinate.latitude, coordinate.longitude))
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
 
             HStack {
-                Text("Name").frame(width: 60, alignment: .leading).foregroundStyle(SumiTheme.text)
+                Text("Name").frame(width: 60, alignment: .leading).foregroundStyle(TallyTheme.text)
                 TextField("e.g. Canggu", text: $customName,
                           prompt: Text(isResolving ? "Resolving…" : resolvedName))
                     .textFieldStyle(.roundedBorder)
@@ -747,15 +747,15 @@ private struct AddPinFromCoordSheet: View {
             if let id = resolvedTZId, let tz = TimeZone(identifier: id) {
                 HStack(spacing: 6) {
                     Image(systemName: "clock")
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                     Text(id)
                         .font(.caption)
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                     Text("·")
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                     Text(timeString(in: tz))
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(SumiTheme.text)
+                        .foregroundStyle(TallyTheme.text)
                 }
                 .padding(.leading, 60)
             }

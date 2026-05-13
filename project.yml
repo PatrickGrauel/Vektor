@@ -1,6 +1,6 @@
-name: Sumi
+name: Tally
 options:
-  bundleIdPrefix: app.sumi
+  bundleIdPrefix: app.tally
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -18,13 +18,13 @@ settings:
     DEAD_CODE_STRIPPING: YES
 
 packages:
-  SumiEngine:
-    path: Packages/SumiEngine
-  SumiAviation:
-    path: Packages/SumiAviation
+  TallyEngine:
+    path: Packages/TallyEngine
+  TallyAviation:
+    path: Packages/TallyAviation
 
 targets:
-  Sumi:
+  Tally:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
@@ -35,13 +35,13 @@ targets:
     resources:
       - path: App/Resources/Assets.xcassets
     dependencies:
-      - package: SumiEngine
-      - package: SumiAviation
+      - package: TallyEngine
+      - package: TallyAviation
     info:
       path: App/Resources/Info.plist
       properties:
-        CFBundleName: Sumi
-        CFBundleDisplayName: Sumi
+        CFBundleName: Tally
+        CFBundleDisplayName: Tally
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
@@ -49,15 +49,15 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: "© 2026 Patrick Grauel"
     entitlements:
-      path: App/Resources/Sumi.entitlements
+      path: App/Resources/Tally.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
         com.apple.security.files.user-selected.read-write: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.sumi.Sumi
+        PRODUCT_BUNDLE_IDENTIFIER: app.tally.Tally
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_ENTITLEMENTS: App/Resources/Sumi.entitlements
+        CODE_SIGN_ENTITLEMENTS: App/Resources/Tally.entitlements
         ENABLE_HARDENED_RUNTIME: YES

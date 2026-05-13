@@ -27,7 +27,7 @@ final class MenuBarController: NSObject {
             button.target = self
             button.action = #selector(handleClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.toolTip = "Sumi — click to toggle window, right-click for menu"
+            button.toolTip = "Tally — click to toggle window, right-click for menu"
         }
         self.statusItem = item
     }
@@ -60,7 +60,7 @@ final class MenuBarController: NSObject {
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Open Sumi", action: #selector(menuOpen), keyEquivalent: "o").target = self
+        menu.addItem(withTitle: "Open Tally", action: #selector(menuOpen), keyEquivalent: "o").target = self
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Preferences…", action: #selector(menuPreferences), keyEquivalent: ",").target = self
         let menuBarOnlyItem = NSMenuItem(
@@ -72,7 +72,7 @@ final class MenuBarController: NSObject {
         menuBarOnlyItem.state = isMenuBarOnly() ? .on : .off
         menu.addItem(menuBarOnlyItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Quit Sumi", action: #selector(menuQuit), keyEquivalent: "q").target = self
+        menu.addItem(withTitle: "Quit Tally", action: #selector(menuQuit), keyEquivalent: "q").target = self
         return menu
     }
 
@@ -90,7 +90,7 @@ final class MenuBarController: NSObject {
 
     private func mainWindow() -> NSWindow? {
         // ContentView sets navigationTitle("") so window.title is empty —
-        // we identify the WindowGroup("Sumi", id: "main") window by its
+        // we identify the WindowGroup("Tally", id: "main") window by its
         // SwiftUI-assigned identifier instead, falling back to a class /
         // canBecomeMain filter (excluding Settings, status item, etc.).
         if let win = NSApp.windows.first(where: { window in
@@ -123,32 +123,33 @@ final class MenuBarController: NSObject {
 
     private func toggleMainWindow() {
         if mainWindowIsShowing() {
-            if NSApp.activationPolicy() == .accessory {
-                // NSApp.hide is a no-op for accessory apps — order out directly.
-                mainWindow()?.orderOut(nil)
-            } else {
-                NSApp.hide(nil)
-            }
+            // `orderOut` (not `NSApp.hide`) for both modes: hide preserves
+            // the window's home Space, so the next activate would yank the
+            // user back to that Space. `orderOut` cleanly detaches the
+            // window from any Space — the next `makeKeyAndOrderFront` lands
+            // it on whatever Space the user is on at that moment.
+            mainWindow()?.orderOut(nil)
             return
         }
 
-        // Make the window follow us to whichever Space the user is on.
-        // Without this, macOS switches the *user* to the Space where the
-        // window currently lives (annoying when the menu bar icon is the
-        // only thing they clicked).
+        // Window flags guarantee it can appear on any Space (incl. fullscreen).
+        // Order matters: bring the window forward *first* so it materialises
+        // on the current Space — then activate the app. Doing activate first
+        // makes macOS jump to wherever the app's key window currently lives,
+        // which is exactly the "Space slide" the user wanted to avoid.
         if let win = mainWindow() {
             Self.prepareForCrossSpaceSummon(win)
             if win.isMiniaturized { win.deminiaturize(nil) }
-            NSApp.activate(ignoringOtherApps: true)
             win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         } else if let open = openMainWindow {
             // Closed via red X, or accessory-mode warm path.
-            NSApp.activate(ignoringOtherApps: true)
             open()
             DispatchQueue.main.async { [weak self] in
                 if let w = self?.mainWindow() {
-                    w.collectionBehavior.insert(.moveToActiveSpace)
+                    Self.prepareForCrossSpaceSummon(w)
                     w.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
                 }
             }
         } else {
@@ -156,8 +157,14 @@ final class MenuBarController: NSObject {
             // the WindowGroup has never been materialized. SwiftUI exposes
             // File → New Window via `newWindowForTab:`, which creates a
             // fresh WindowGroup window even with no Dock icon.
-            NSApp.activate(ignoringOtherApps: true)
             NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
+            DispatchQueue.main.async { [weak self] in
+                if let w = self?.mainWindow() {
+                    Self.prepareForCrossSpaceSummon(w)
+                    w.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
         }
     }
 
@@ -167,13 +174,18 @@ final class MenuBarController: NSObject {
         if let win = mainWindow() {
             Self.prepareForCrossSpaceSummon(win)
             if win.isMiniaturized { win.deminiaturize(nil) }
-            NSApp.activate(ignoringOtherApps: true)
             win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         } else if let open = openMainWindow {
-            NSApp.activate(ignoringOtherApps: true)
             open()
+            DispatchQueue.main.async { [weak self] in
+                if let w = self?.mainWindow() {
+                    Self.prepareForCrossSpaceSummon(w)
+                    w.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
         } else {
-            NSApp.activate(ignoringOtherApps: true)
             NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
         }
     }
@@ -194,7 +206,7 @@ final class MenuBarController: NSObject {
 
     @objc private func menuToggleMenuBarOnly() {
         let new = !isMenuBarOnly()
-        UserDefaults.standard.set(new, forKey: "sumi.menuBarOnly")
+        UserDefaults.standard.set(new, forKey: "tally.menuBarOnly")
         applyActivationPolicy()
         contextMenu = makeMenu()  // refresh checkmark
     }
@@ -210,7 +222,7 @@ final class MenuBarController: NSObject {
     }
 
     private func isMenuBarOnly() -> Bool {
-        UserDefaults.standard.bool(forKey: "sumi.menuBarOnly")
+        UserDefaults.standard.bool(forKey: "tally.menuBarOnly")
     }
 
     // MARK: - Icon

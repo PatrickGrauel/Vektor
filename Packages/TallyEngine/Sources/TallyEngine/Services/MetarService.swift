@@ -1,5 +1,5 @@
 import Foundation
-import SumiAviation
+import TallyAviation
 
 /// Wrapper around aviationweather.gov (METAR / TAF) and datis.clowd.io (ATIS,
 /// FAA airports only). All sources are free and unauthenticated.

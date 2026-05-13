@@ -9,7 +9,7 @@ import SwiftUI
 /// TipForm); shared building blocks (`ResultRow`, `SaveScenarioSheet`)
 /// likewise. This file is just the segmented-tab dispatcher.
 struct FinancePane: View {
-    @AppStorage("sumi.finance.tab") private var rawTab: String = FinanceTab.loan.rawValue
+    @AppStorage("tally.finance.tab") private var rawTab: String = FinanceTab.loan.rawValue
     @StateObject private var loans = LoanStore.loans()
     @StateObject private var deals = RealEstateStore.deals()
 
@@ -41,7 +41,7 @@ struct FinancePane: View {
                 }
             }
         }
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
     }
 }
 

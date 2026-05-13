@@ -1,11 +1,11 @@
 {
-  "name": "sumi-js",
+  "name": "tally-js",
   "version": "0.1.0",
-  "description": "math.js bundler for Sumi (loaded into JSContext at runtime)",
+  "description": "math.js bundler for Tally (loaded into JSContext at runtime)",
   "private": true,
   "scripts": {
-    "build": "esbuild entry.js --bundle --format=iife --global-name=SumiJS --minify --target=es2020 --outfile=../Packages/SumiEngine/Sources/SumiEngine/Resources/mathjs.bundle.js",
-    "build:dev": "esbuild entry.js --bundle --format=iife --global-name=SumiJS --target=es2020 --outfile=../Packages/SumiEngine/Sources/SumiEngine/Resources/mathjs.bundle.js"
+    "build": "esbuild entry.js --bundle --format=iife --global-name=TallyJS --minify --target=es2020 --outfile=../Packages/TallyEngine/Sources/TallyEngine/Resources/mathjs.bundle.js",
+    "build:dev": "esbuild entry.js --bundle --format=iife --global-name=TallyJS --target=es2020 --outfile=../Packages/TallyEngine/Sources/TallyEngine/Resources/mathjs.bundle.js"
   },
   "dependencies": {
     "mathjs": "^13.0.0"

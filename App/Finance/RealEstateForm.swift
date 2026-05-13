@@ -5,33 +5,33 @@ struct RealEstateForm: View {
     @EnvironmentObject private var store: RealEstateStore
 
     // Naming
-    @AppStorage("sumi.finance.re.address")  private var address: String = ""
+    @AppStorage("tally.finance.re.address")  private var address: String = ""
 
     // Property
-    @AppStorage("sumi.finance.re.price")    private var purchasePrice: Double = 500_000
-    @AppStorage("sumi.finance.re.closing")  private var closingCostsPercent: Double = 3.0
-    @AppStorage("sumi.finance.re.currency") private var currency: String = "USD"
+    @AppStorage("tally.finance.re.price")    private var purchasePrice: Double = 500_000
+    @AppStorage("tally.finance.re.closing")  private var closingCostsPercent: Double = 3.0
+    @AppStorage("tally.finance.re.currency") private var currency: String = "USD"
     // Financing
-    @AppStorage("sumi.finance.re.downPct")  private var downPaymentPercent: Double = 25
-    @AppStorage("sumi.finance.re.rate")     private var mortgageRatePercent: Double = 6.5
-    @AppStorage("sumi.finance.re.term")     private var loanTermYears: Double = 30
+    @AppStorage("tally.finance.re.downPct")  private var downPaymentPercent: Double = 25
+    @AppStorage("tally.finance.re.rate")     private var mortgageRatePercent: Double = 6.5
+    @AppStorage("tally.finance.re.term")     private var loanTermYears: Double = 30
     // Income
-    @AppStorage("sumi.finance.re.rent")     private var monthlyRent: Double = 3_500
-    @AppStorage("sumi.finance.re.vacancy")  private var vacancyPercent: Double = 5
-    @AppStorage("sumi.finance.re.other")    private var otherMonthlyIncome: Double = 0
-    @AppStorage("sumi.finance.re.rentGrow") private var annualRentGrowthPercent: Double = 3
+    @AppStorage("tally.finance.re.rent")     private var monthlyRent: Double = 3_500
+    @AppStorage("tally.finance.re.vacancy")  private var vacancyPercent: Double = 5
+    @AppStorage("tally.finance.re.other")    private var otherMonthlyIncome: Double = 0
+    @AppStorage("tally.finance.re.rentGrow") private var annualRentGrowthPercent: Double = 3
     // OpEx
-    @AppStorage("sumi.finance.re.tax")      private var propertyTaxAnnual: Double = 4_500
-    @AppStorage("sumi.finance.re.ins")      private var insuranceAnnual: Double = 1_200
-    @AppStorage("sumi.finance.re.maint")    private var maintenancePercentOfRent: Double = 8
-    @AppStorage("sumi.finance.re.mgmt")     private var propertyMgmtPercentOfRent: Double = 8
-    @AppStorage("sumi.finance.re.hoa")      private var hoaMonthly: Double = 0
-    @AppStorage("sumi.finance.re.capex")    private var capExPercentOfRent: Double = 5
-    @AppStorage("sumi.finance.re.util")     private var utilitiesAnnual: Double = 0
+    @AppStorage("tally.finance.re.tax")      private var propertyTaxAnnual: Double = 4_500
+    @AppStorage("tally.finance.re.ins")      private var insuranceAnnual: Double = 1_200
+    @AppStorage("tally.finance.re.maint")    private var maintenancePercentOfRent: Double = 8
+    @AppStorage("tally.finance.re.mgmt")     private var propertyMgmtPercentOfRent: Double = 8
+    @AppStorage("tally.finance.re.hoa")      private var hoaMonthly: Double = 0
+    @AppStorage("tally.finance.re.capex")    private var capExPercentOfRent: Double = 5
+    @AppStorage("tally.finance.re.util")     private var utilitiesAnnual: Double = 0
     // Hold + exit
-    @AppStorage("sumi.finance.re.appr")     private var appreciationPercent: Double = 3
-    @AppStorage("sumi.finance.re.hold")     private var holdYears: Double = 10
-    @AppStorage("sumi.finance.re.sellPct")  private var sellingCostsPercent: Double = 6
+    @AppStorage("tally.finance.re.appr")     private var appreciationPercent: Double = 3
+    @AppStorage("tally.finance.re.hold")     private var holdYears: Double = 10
+    @AppStorage("tally.finance.re.sellPct")  private var sellingCostsPercent: Double = 6
 
     @State private var compareID: UUID? = nil
     @State private var showSaveSheet = false
@@ -62,7 +62,7 @@ struct RealEstateForm: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
         .sheet(isPresented: $showSaveSheet) {
             SaveScenarioSheet(
                 title: "Save deal",
@@ -398,8 +398,8 @@ struct RealEstateForm: View {
                         y: .value("Cash flow", yr.cashFlow)
                     )
                     .foregroundStyle(yr.cashFlow >= 0
-                        ? SumiTheme.accent.opacity(0.7)
-                        : SumiTheme.statusBad.opacity(0.7))
+                        ? TallyTheme.accent.opacity(0.7)
+                        : TallyTheme.statusBad.opacity(0.7))
                 }
             }
             .frame(height: 160)
@@ -416,21 +416,21 @@ struct RealEstateForm: View {
                         y: .value("Equity", yr.equity),
                         series: .value("Series", "Total equity (value − loan)")
                     )
-                    .foregroundStyle(SumiTheme.accent.opacity(0.30))
+                    .foregroundStyle(TallyTheme.accent.opacity(0.30))
                     .interpolationMethod(.monotone)
                     LineMark(
                         x: .value("Year", yr.year),
                         y: .value("Equity", yr.equity),
                         series: .value("Series", "Total equity (value − loan)")
                     )
-                    .foregroundStyle(SumiTheme.accent)
+                    .foregroundStyle(TallyTheme.accent)
                     .interpolationMethod(.monotone)
                     LineMark(
                         x: .value("Year", yr.year),
                         y: .value("Cumulative cash flow", yr.cumulativeCashFlow),
                         series: .value("Series", "Cumulative cash flow")
                     )
-                    .foregroundStyle(SumiTheme.statusGood)
+                    .foregroundStyle(TallyTheme.statusGood)
                     .interpolationMethod(.monotone)
                 }
             }

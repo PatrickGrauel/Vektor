@@ -15,13 +15,13 @@ const math = create(all, {
 // register currency rates and aviation functions at startup.
 globalThis.math = math;
 
-globalThis.sumi = {
+globalThis.tally = {
   /** Variables declared in the document survive across lines via this scope. */
   scope: {},
 
   /** Reset before re-evaluating the whole document. */
   resetScope() {
-    globalThis.sumi.scope = {};
+    globalThis.tally.scope = {};
   },
 
   /**
@@ -178,13 +178,17 @@ globalThis.sumi = {
     add("kmh",  "1 km / hour");
     add("kph",  "1 km / hour");
     add("mps",  "1 m / s");
+    add("mph",  "1 mile / hour");          // math.js doesn't ship this
 
     // ── Length / Astronomy ──────────────────────────────────────
+    // NOTE: math.js's createUnit rejects names with underscores, so any
+    // alias defined here must be a single identifier of letters only.
+    // `parsec` is the documented spelling; `pc` collides with gold prefix
+    // disambiguation in math.js, so we register both names explicitly.
     add("micron",    "1 um");
     add("ly",        "9.4607304725808e15 m");   // light-year
     add("AU",        "149597870700 m");          // astronomical unit
-    add("au_unit",   "1 AU");                    // disambiguates from gold (au)
-    add("pc_unit",   "3.0857e16 m");             // parsec
+    add("parsec",    "3.0857e16 m");             // canonical name in docs
     add("fathom",    "1.8288 m");
     add("furlong",   "201.168 m");
     add("league",    "4828.032 m");
@@ -195,14 +199,21 @@ globalThis.sumi = {
     add("slug_mass", "14.5939 kg");
 
     // ── Volume ──────────────────────────────────────────────────
+    // math.js's createUnit silently rejects names with underscores, so
+    // `imperial_gallon` would never resolve. Use a single-identifier name.
     add("ml",        "1 milliliter");
     add("dl",        "100 milliliter");
-    add("imperial_gallon", "4.54609 liter");
-    add("imperial_pint",   "0.568261 liter");
+    add("igallon",   "4.54609 liter");           // imperial gallon
+    add("ipint",     "0.568261 liter");          // imperial pint
+    add("tbsp",      "1 tablespoon");
+    add("tsp",       "1 teaspoon");
 
     // ── Energy / Power ──────────────────────────────────────────
+    // `cal` (gram calorie, 4.184 J) and `Cal` (food calorie / kcal, 4184 J)
+    // — keep them as single-word identifiers; math.js's createUnit silently
+    // rejects names with underscores so `cal_unit` would never resolve.
     add("ps",        "735.49875 W");             // metric horsepower
-    add("cal_unit",  "4.184 J");                 // gram calorie
+    add("cal",       "4.184 J");                 // gram calorie
     add("Cal",       "4184 J");                  // kcal / food calorie
     add("MWh",       "3.6e9 J");
     add("GWh",       "3.6e12 J");
@@ -231,6 +242,9 @@ globalThis.sumi = {
     add("ream",      "500");
     add("baker_dozen", "13");
 
+    // ── Data sizes (math.js uses kB/MB/etc.; KB is the conventional spelling) ──
+    add("KB",        "1 kB");                    // KB ↔ kB (1000 bytes)
+    add("KiB",       "1024 byte");
     // ── Data rates ──────────────────────────────────────────────
     add("kbps",      "1000 b / s");
     add("Mbps",      "1000000 b / s");
@@ -326,7 +340,7 @@ globalThis.sumi = {
    * variable assignments stick across lines (`a = 12; a * b`).
    */
   evalLine(expr) {
-    return math.evaluate(expr, globalThis.sumi.scope);
+    return math.evaluate(expr, globalThis.tally.scope);
   },
 };
 
@@ -334,8 +348,8 @@ globalThis.sumi = {
 // `1.8h in hh:mm:ss` to `hms(1.8h)` and get a "01:48:00" string back.
 try {
   math.import({
-    hms: (v) => globalThis.sumi.formatHMS(v, true),
-    hm:  (v) => globalThis.sumi.formatHMS(v, false),
+    hms: (v) => globalThis.tally.formatHMS(v, true),
+    hm:  (v) => globalThis.tally.formatHMS(v, false),
   }, { override: true });
 } catch (e) { /* ignore */ }
 
@@ -528,5 +542,5 @@ try {
   }, { override: true });
 } catch (e) { /* ignore */ }
 
-globalThis.sumi.initBaseCurrencies();
-globalThis.sumi.initAviationUnits();
+globalThis.tally.initBaseCurrencies();
+globalThis.tally.initAviationUnits();

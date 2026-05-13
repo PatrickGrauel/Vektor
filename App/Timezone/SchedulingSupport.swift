@@ -44,7 +44,7 @@ struct TimeStripView: View {
             }
         }
         .padding(.vertical, 4)
-        .background(SumiTheme.surface)
+        .background(TallyTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
@@ -64,7 +64,7 @@ struct TimeStripView: View {
                 if h % 3 == 0 {
                     let text = Text(String(format: "%02d", h))
                         .font(.caption2)
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                     ctx.draw(text, at: CGPoint(x: x + cellW / 2, y: 11))
                 }
             }
@@ -74,7 +74,7 @@ struct TimeStripView: View {
             var line = Path()
             line.move(to: CGPoint(x: cursorX, y: 0))
             line.addLine(to: CGPoint(x: cursorX, y: size.height))
-            ctx.stroke(line, with: .color(SumiTheme.accent), lineWidth: 1)
+            ctx.stroke(line, with: .color(TallyTheme.accent), lineWidth: 1)
         }
         .frame(width: width)
     }
@@ -87,11 +87,11 @@ struct TimeStripView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(city.name)
                     .font(.system(.body, design: .default))
-                    .foregroundStyle(SumiTheme.text)
+                    .foregroundStyle(TallyTheme.text)
                     .lineLimit(1)
                 Text(localTime(for: city, at: cursor))
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
             }
             .frame(width: 130, alignment: .leading)
 
@@ -147,9 +147,9 @@ struct TimeStripView: View {
                 let inHours = city.isWorkingHour(date)
                 let asleep = isSleepHour(city: city, at: date)
                 let fill: Color
-                if inHours        { fill = SumiTheme.accent.opacity(0.55) }
-                else if asleep    { fill = SumiTheme.codeSurface.opacity(0.9) }
-                else              { fill = SumiTheme.surface.opacity(0.6) }
+                if inHours        { fill = TallyTheme.accent.opacity(0.55) }
+                else if asleep    { fill = TallyTheme.codeSurface.opacity(0.9) }
+                else              { fill = TallyTheme.surface.opacity(0.6) }
                 let rect = CGRect(x: CGFloat(i) * cellW, y: 0,
                                   width: cellW, height: size.height)
                 ctx.fill(Path(rect.insetBy(dx: 0.5, dy: 2)), with: .color(fill))
@@ -159,7 +159,7 @@ struct TimeStripView: View {
             var line = Path()
             line.move(to: CGPoint(x: cursorX, y: 0))
             line.addLine(to: CGPoint(x: cursorX, y: size.height))
-            ctx.stroke(line, with: .color(SumiTheme.accent), lineWidth: 2)
+            ctx.stroke(line, with: .color(TallyTheme.accent), lineWidth: 2)
         }
         .frame(width: width)
         .accessibilityElement()
@@ -275,11 +275,11 @@ struct WorkingHoursEditor: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Working hours for \(city.name)")
                 .font(.headline)
-                .foregroundStyle(SumiTheme.text)
+                .foregroundStyle(TallyTheme.text)
 
             HStack(spacing: 8) {
                 Text("From").frame(width: 50, alignment: .leading)
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
                 Picker("", selection: $startHour) {
                     ForEach(0..<24, id: \.self) { h in
                         Text(String(format: "%02d:00", h)).tag(h)
@@ -288,7 +288,7 @@ struct WorkingHoursEditor: View {
                 .labelsHidden()
                 .frame(width: 100)
                 Text("to")
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
                 Picker("", selection: $endHour) {
                     ForEach(1...24, id: \.self) { h in
                         Text(String(format: "%02d:00", h)).tag(h)
@@ -299,7 +299,7 @@ struct WorkingHoursEditor: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Workdays").font(.caption).foregroundStyle(SumiTheme.muted)
+                Text("Workdays").font(.caption).foregroundStyle(TallyTheme.muted)
                 HStack(spacing: 4) {
                     ForEach(WorkingHoursEditor.dayLabels.enumerated().map { $0 }, id: \.offset) { offset, label in
                         let weekday = offset + 1     // Sun=1 … Sat=7
@@ -480,7 +480,7 @@ struct PlaceSearchSheet: View {
             } else {
                 Text("Type to search worldwide — addresses, cities, neighbourhoods, POIs.")
                     .font(.caption)
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
                     .padding(.vertical, 4)
             }
 
@@ -491,7 +491,7 @@ struct PlaceSearchSheet: View {
                     ProgressView().controlSize(.small)
                     Text("Resolving…")
                         .font(.caption)
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                 }
                 Spacer()
                 Button("Cancel") { onCancel() }
@@ -505,16 +505,16 @@ struct PlaceSearchSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Add a place").font(.headline).foregroundStyle(SumiTheme.text)
+            Text("Add a place").font(.headline).foregroundStyle(TallyTheme.text)
             Text("Powered by Apple Maps — finds POIs, neighbourhoods, regions, and addresses.")
                 .font(.caption)
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
         }
     }
 
     private var searchField: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").foregroundStyle(SumiTheme.muted)
+            Image(systemName: "magnifyingglass").foregroundStyle(TallyTheme.muted)
             TextField("Try “Uluwatu” or “Tokyo” or “3 rue de Rivoli”",
                       text: $model.query)
                 .textFieldStyle(.plain)
@@ -531,7 +531,7 @@ struct PlaceSearchSheet: View {
                     focused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                 }
                 .buttonStyle(.plain)
                 .help("Clear search")
@@ -539,7 +539,7 @@ struct PlaceSearchSheet: View {
             }
         }
         .padding(8)
-        .background(SumiTheme.codeSurface)
+        .background(TallyTheme.codeSurface)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -547,7 +547,7 @@ struct PlaceSearchSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Try")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
             FlowLayout(spacing: 8) {
                 ForEach(examples, id: \.self) { example in
                     Button {
@@ -557,8 +557,8 @@ struct PlaceSearchSheet: View {
                             .font(.caption)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(SumiTheme.surface)
-                            .foregroundStyle(SumiTheme.text)
+                            .background(TallyTheme.surface)
+                            .foregroundStyle(TallyTheme.text)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -577,24 +577,24 @@ struct PlaceSearchSheet: View {
                     } label: {
                         HStack(alignment: .center, spacing: 10) {
                             Image(systemName: iconFor(c))
-                                .foregroundStyle(SumiTheme.accent)
+                                .foregroundStyle(TallyTheme.accent)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(c.title)
-                                    .foregroundStyle(SumiTheme.text)
+                                    .foregroundStyle(TallyTheme.text)
                                 if !c.subtitle.isEmpty {
                                     Text(c.subtitle)
                                         .font(.caption)
-                                        .foregroundStyle(SumiTheme.muted)
+                                        .foregroundStyle(TallyTheme.muted)
                                 }
                             }
                             Spacer()
                             Image(systemName: "arrow.up.right")
                                 .font(.caption)
-                                .foregroundStyle(SumiTheme.muted)
+                                .foregroundStyle(TallyTheme.muted)
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(SumiTheme.surface)
+                        .background(TallyTheme.surface)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .contentShape(Rectangle())
                     }
@@ -608,10 +608,10 @@ struct PlaceSearchSheet: View {
     private func errorRow(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(SumiTheme.statusCaution)
+                .foregroundStyle(TallyTheme.statusCaution)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Search failed")
-                    .foregroundStyle(SumiTheme.text)
+                    .foregroundStyle(TallyTheme.text)
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -699,6 +699,10 @@ private struct FlowLayout: Layout {
 
 struct CalendarSaveOptions: Equatable {
     var title: String
+    /// Absolute start moment chosen in the confirm sheet. The cursor
+    /// seeds it, but the user can override (and the picker snaps to
+    /// 15-min slots so the calendar never sees a 13:32).
+    var startsAt: Date
     var durationMinutes: Int
     var location: String
     var url: URL?
@@ -811,11 +815,11 @@ struct CalendarConfirmSheet: View {
     let onConfirm: (CalendarSaveOptions) -> Void
     let onCancel: () -> Void
 
-    @AppStorage("sumi.calendar.lastTitle")      private var lastTitle: String = "Sync"
-    @AppStorage("sumi.calendar.lastDuration")   private var lastDuration: Int = 60
-    @AppStorage("sumi.calendar.lastAlarm")      private var lastAlarm: Int = 10
-    @AppStorage("sumi.calendar.lastCalendarID") private var lastCalendarID: String = ""
-    @AppStorage("sumi.calendar.openAfterSave")  private var openAfterSave: Bool = false
+    @AppStorage("tally.calendar.lastTitle")      private var lastTitle: String = "Sync"
+    @AppStorage("tally.calendar.lastDuration")   private var lastDuration: Int = 60
+    @AppStorage("tally.calendar.lastAlarm")      private var lastAlarm: Int = 10
+    @AppStorage("tally.calendar.lastCalendarID") private var lastCalendarID: String = ""
+    @AppStorage("tally.calendar.openAfterSave")  private var openAfterSave: Bool = false
 
     @State private var title: String = ""
     @State private var duration: Int = 60
@@ -827,10 +831,23 @@ struct CalendarConfirmSheet: View {
     @State private var selectedCalendarID: String = ""
     @State private var permissionDenied: Bool = false
     @State private var loading: Bool = true
+    /// Date component of the start moment. Time stripped — slot picker
+    /// supplies the time-of-day so we never have to snap minutes.
+    @State private var startDay: Date = Date()
+    /// Index into the 15-min slot grid: 0 = 00:00, 1 = 00:15, … 95 = 23:45.
+    @State private var startSlotIndex: Int = 0
 
     @FocusState private var focused: Field?
 
     enum Field: Hashable { case title, location, url }
+
+    /// Total number of 15-min slots in a day (24 × 4).
+    private static let slotCount = 96
+
+    private static func slotLabel(_ index: Int) -> String {
+        let total = index * 15
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
 
     private static let presetDurations: [Int] = [15, 30, 45, 60, 90, 120]
     private static let alarmOptions: [(label: String, minutes: Int)] = [
@@ -863,7 +880,7 @@ struct CalendarConfirmSheet: View {
                    isOn: $openAfterSave)
                 .toggleStyle(.checkbox)
                 .font(.caption)
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
 
             if permissionDenied {
                 permissionRow
@@ -889,10 +906,10 @@ struct CalendarConfirmSheet: View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Save meeting to Calendar")
                 .font(.headline)
-                .foregroundStyle(SumiTheme.text)
+                .foregroundStyle(TallyTheme.text)
             Text("Adds a fully-formed event with title, duration, alert, and the cross-timezone note.")
                 .font(.caption)
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
         }
     }
 
@@ -914,12 +931,12 @@ struct CalendarConfirmSheet: View {
                     ProgressView().controlSize(.small)
                     Text("Loading calendars…")
                         .font(.caption)
-                        .foregroundStyle(SumiTheme.muted)
+                        .foregroundStyle(TallyTheme.muted)
                 }
             } else if calendars.isEmpty {
                 Text("System default")
                     .font(.caption)
-                    .foregroundStyle(SumiTheme.muted)
+                    .foregroundStyle(TallyTheme.muted)
             } else {
                 Picker("", selection: $selectedCalendarID) {
                     ForEach(calendars, id: \.calendarIdentifier) { cal in
@@ -941,19 +958,31 @@ struct CalendarConfirmSheet: View {
     private var startRow: some View {
         GridRow(alignment: .top) {
             label("Starts")
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    DatePicker("", selection: $startDay, displayedComponents: .date)
+                        .labelsHidden()
+                    Picker("", selection: $startSlotIndex) {
+                        ForEach(0..<Self.slotCount, id: \.self) { i in
+                            Text(Self.slotLabel(i)).tag(i)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 90)
+                    .help("Quarter-hour slots — no 13:32 meetings")
+                }
                 ForEach(cityStarts, id: \.name) { row in
                     HStack(spacing: 6) {
                         Text(row.name)
                             .frame(width: 110, alignment: .leading)
-                            .foregroundStyle(SumiTheme.muted)
+                            .foregroundStyle(TallyTheme.muted)
                         Text(row.line)
                             .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(SumiTheme.text)
+                            .foregroundStyle(TallyTheme.text)
                         if let delta = row.delta {
                             Text(delta)
                                 .font(.caption2)
-                                .foregroundStyle(SumiTheme.accent)
+                                .foregroundStyle(TallyTheme.accent)
                         }
                     }
                 }
@@ -969,7 +998,7 @@ struct CalendarConfirmSheet: View {
                     TextField("", value: $duration, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 70)
-                    Text("min").foregroundStyle(SumiTheme.muted)
+                    Text("min").foregroundStyle(TallyTheme.muted)
                     Button("Use preset") { customDuration = false }
                         .buttonStyle(.borderless)
                         .font(.caption)
@@ -1024,31 +1053,40 @@ struct CalendarConfirmSheet: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Notes (auto-filled)")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(SumiTheme.muted)
-            Text(SchedulingSnippet.format(cities, at: cursor))
+                .foregroundStyle(TallyTheme.muted)
+            Text(SchedulingSnippet.format(cities, at: startsAt))
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(SumiTheme.codeSurface)
+                .background(TallyTheme.codeSurface)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
+    }
+
+    /// The chosen start: midnight of `startDay` plus `startSlotIndex` × 15 min.
+    /// Computed off the user's local calendar so the time-of-day matches the
+    /// labels in the slot picker.
+    private var startsAt: Date {
+        let cal = Calendar.current
+        let day = cal.startOfDay(for: startDay)
+        return cal.date(byAdding: .minute, value: startSlotIndex * 15, to: day) ?? day
     }
 
     private var permissionRow: some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(SumiTheme.statusCaution)
-            Text("Calendar access denied — enable Sumi in System Settings → Privacy → Calendars.")
+                .foregroundStyle(TallyTheme.statusCaution)
+            Text("Calendar access denied — enable Tally in System Settings → Privacy → Calendars.")
                 .font(.caption)
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
         }
     }
 
     private func label(_ s: String) -> some View {
         Text(s)
             .frame(width: 72, alignment: .leading)
-            .foregroundStyle(SumiTheme.muted)
+            .foregroundStyle(TallyTheme.muted)
     }
 
     // MARK: - Data
@@ -1067,8 +1105,9 @@ struct CalendarConfirmSheet: View {
     /// time, plus an optional day-delta vs the first pinned city.
     private var cityStarts: [CityStart] {
         guard let primaryTZ = cities.first?.resolvedTimeZone else { return [] }
+        let moment = startsAt
         var primaryCal = Calendar(identifier: .gregorian); primaryCal.timeZone = primaryTZ
-        let primaryDay = primaryCal.ordinality(of: .day, in: .era, for: cursor) ?? 0
+        let primaryDay = primaryCal.ordinality(of: .day, in: .era, for: moment) ?? 0
 
         return cities.compactMap { city in
             guard let tz = city.resolvedTimeZone else { return nil }
@@ -1076,16 +1115,33 @@ struct CalendarConfirmSheet: View {
             fmt.locale = Locale(identifier: "en_US_POSIX")
             fmt.timeZone = tz
             fmt.dateFormat = "EEE HH:mm zzz"
-            let line = fmt.string(from: cursor)
+            let line = fmt.string(from: moment)
 
             var cal = Calendar(identifier: .gregorian); cal.timeZone = tz
-            let day = cal.ordinality(of: .day, in: .era, for: cursor) ?? 0
+            let day = cal.ordinality(of: .day, in: .era, for: moment) ?? 0
             let delta = day - primaryDay
             let deltaLabel: String?
             if delta == 0      { deltaLabel = nil }
             else if delta > 0  { deltaLabel = "+\(delta) day" }
             else               { deltaLabel = "\(delta) day" }
             return CityStart(name: city.name, line: line, delta: deltaLabel)
+        }
+    }
+
+    /// Seed `startDay` / `startSlotIndex` from the cursor, rounding **up**
+    /// to the next 15-min slot so we never propose a start that's already
+    /// in the past. Overflowing past 23:45 rolls into the next day.
+    private func seedStart(from moment: Date) {
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.hour, .minute], from: moment)
+        let totalMin = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+        let nextSlot = Int(ceil(Double(totalMin) / 15.0))
+        if nextSlot >= Self.slotCount {
+            startDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: moment)) ?? moment
+            startSlotIndex = 0
+        } else {
+            startDay = cal.startOfDay(for: moment)
+            startSlotIndex = nextSlot
         }
     }
 
@@ -1103,6 +1159,7 @@ struct CalendarConfirmSheet: View {
         duration = lastDuration
         alarmMinutes = lastAlarm
         customDuration = !Self.presetDurations.contains(lastDuration)
+        seedStart(from: cursor)
 
         let (loaded, defaultID) = await CalendarExporter.loadWritableCalendars()
         await MainActor.run {
@@ -1133,6 +1190,7 @@ struct CalendarConfirmSheet: View {
         }()
         let opts = CalendarSaveOptions(
             title: title,
+            startsAt: startsAt,
             durationMinutes: duration,
             location: location,
             url: url,

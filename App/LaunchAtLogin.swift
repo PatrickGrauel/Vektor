@@ -1,7 +1,7 @@
 import Foundation
 import ServiceManagement
 
-/// macOS 13+ SMAppService wrapper for registering Sumi as a Login Item.
+/// macOS 13+ SMAppService wrapper for registering Tally as a Login Item.
 enum LaunchAtLogin {
     static var isEnabled: Bool {
         SMAppService.mainApp.status == .enabled

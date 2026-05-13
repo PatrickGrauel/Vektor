@@ -77,7 +77,7 @@ extension PersistentStore where T == SavedLoan {
     /// UUID so anything that referenced that id stays valid.
     static func loans() -> LoanStore {
         LoanStore(
-            storageKey: "sumi.finance.loan.scenarios.v1",
+            storageKey: "tally.finance.loan.scenarios.v1",
             matches: { $0.name == $1.name },
             merge: { existing, new in
                 var copy = new
@@ -92,7 +92,7 @@ extension PersistentStore where T == SavedRealEstateDeal {
     /// Real-estate deals dedupe by **name** (same semantics as loans).
     static func deals() -> RealEstateStore {
         RealEstateStore(
-            storageKey: "sumi.finance.realestate.scenarios.v1",
+            storageKey: "tally.finance.realestate.scenarios.v1",
             matches: { $0.name == $1.name },
             merge: { existing, new in
                 var copy = new
@@ -107,6 +107,6 @@ extension PersistentStore where T == SavedAircraft {
     /// Aircraft dedupe by **id**: the editor mutates a copy of the
     /// existing aircraft and saves it back under the same UUID.
     static func aircraft() -> AircraftStore {
-        AircraftStore(storageKey: "sumi.wb.savedAircraft")
+        AircraftStore(storageKey: "tally.wb.savedAircraft")
     }
 }

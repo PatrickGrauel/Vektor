@@ -68,6 +68,11 @@ public final class NumiEngine {
     private let preprocessor = NumiPreprocessor()
     private let timezone = TimezoneBridge()
     private let resolver = CityResolver.shared
+    /// Snapshot of every math.js unit name (incl. aliases/plurals/prefixes)
+    /// registered at engine init. Used by `parseConversionForm` to reject
+    /// "<n> mm in m"-style queries that look like military-time conversions
+    /// but are actually unit conversions in disguise.
+    private let knownUnitNames: Set<String>
 
     public init() throws {
         guard let ctx = JSContext() else { throw NumiEngineError.jsContextUnavailable }
@@ -83,6 +88,16 @@ public final class NumiEngine {
         _ = context.evaluateScript(source)
 
         AviationBridge.register(on: context)
+
+        // Capture the unit registry after all unit registrations have run.
+        let names = context.evaluateScript("Object.keys(math.Unit.UNITS || {})")?.toArray() as? [String]
+        self.knownUnitNames = Set((names ?? []).map { $0.lowercased() })
+    }
+
+    /// True when the token (case-insensitive) is a math.js unit. Used to
+    /// veto the timezone parser when the line is actually a unit query.
+    func isKnownUnit(_ token: String) -> Bool {
+        knownUnitNames.contains(token.lowercased())
     }
 
     /// Posted whenever fresh FX or crypto rates land in the JSContext.
@@ -91,7 +106,7 @@ public final class NumiEngine {
     /// to type anything. Without the post, the calculator would stay
     /// on whatever placeholder rates were in place when it first
     /// evaluated on `.onAppear`.
-    public static let ratesUpdatedNotification = Notification.Name("sumi.engine.ratesUpdated")
+    public static let ratesUpdatedNotification = Notification.Name("tally.engine.ratesUpdated")
 
     public func applyFX(_ snapshot: FXService.Snapshot) {
         FXBridge.apply(snapshot, to: context)
@@ -117,7 +132,7 @@ public final class NumiEngine {
 
         // Fresh document = fresh variable scope. Variables declared on earlier
         // lines (`House = 100k EUR`) flow into later lines (`House * 2`).
-        _ = context.evaluateScript("sumi.resetScope();")
+        _ = context.evaluateScript("tally.resetScope();")
 
         for (idx, raw) in lines.enumerated() {
             let trimmed = raw.trimmingCharacters(in: .whitespaces)
@@ -172,11 +187,11 @@ public final class NumiEngine {
                 .replacingOccurrences(of: "\r", with: "\\r")
                 .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
                 .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-            let precision = max(2, min(14, UserDefaults.standard.object(forKey: "sumi.precision") as? Int ?? 14))
+            let precision = max(2, min(14, UserDefaults.standard.object(forKey: "tally.precision") as? Int ?? 14))
             let js = """
             (() => { try {
-                const v = sumi.evalLine('\(escaped)');
-                return sumi.format(v, \(precision));
+                const v = tally.evalLine('\(escaped)');
+                return tally.format(v, \(precision));
             } catch (e) { return '__ERR__' + e.message; } })()
             """
             let jsValue = context.evaluateScript(js)
@@ -342,6 +357,15 @@ public final class NumiEngine {
         guard let _ = line.range(of: regex, options: .regularExpression) else { return nil }
         let pieces = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard let firstWord = pieces.first else { return nil }
+        // Quick veto: if either side of "in" is a registered math.js unit
+        // (e.g. "1000 mm in m" or "60 rpm in Hz"), this is a unit conversion
+        // disguised as 4-digit-military-time. Let math.js handle it.
+        if let lastBeforeIn = pieces.firstIndex(of: "in").map({ pieces[$0 - 1] }),
+           let firstAfterIn = pieces.firstIndex(of: "in").map({ pieces[$0 + 1] }) {
+            if isKnownUnit(lastBeforeIn) || isKnownUnit(firstAfterIn) {
+                return nil
+            }
+        }
         let firstChunk = pieces.prefix(2).joined(separator: " ")
         let hasColon = firstChunk.contains(":")
         let hasAMPM = firstChunk.range(of: #"[AaPp][Mm]"#, options: .regularExpression) != nil
@@ -642,7 +666,7 @@ public final class NumiEngine {
     // MARK: - Lazy currency registration
 
     /// Extract any 3- or 4-letter uppercase tokens and ask the JS side to
-    /// register a placeholder rate if none is loaded yet. `sumi.ensureCurrency`
+    /// register a placeholder rate if none is loaded yet. `tally.ensureCurrency`
     /// filters against an ISO 4217 allow-list so we don't accidentally turn
     /// every random uppercase identifier into a currency.
     private func ensureCurrencies(in line: String) {
@@ -656,7 +680,7 @@ public final class NumiEngine {
         for m in matches {
             let code = ns.substring(with: m.range)
             if seen.insert(code).inserted {
-                _ = context.evaluateScript("sumi.ensureCurrency('\(code)');")
+                _ = context.evaluateScript("tally.ensureCurrency('\(code)');")
             }
         }
     }

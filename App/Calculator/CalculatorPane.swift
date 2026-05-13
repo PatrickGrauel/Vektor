@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import SumiEngine
+import TallyEngine
 
 struct CalculatorPane: View {
     let engine: NumiEngine?
@@ -10,6 +10,10 @@ struct CalculatorPane: View {
 
     @State private var results: [LineResult] = []
     @State private var evaluateTask: Task<Void, Never>? = nil
+    /// Per-source-line extra vertical space that the editor needs to add
+    /// below that line so its left-column row height matches the gutter's
+    /// (multi-line) right-column row height. Driven by `RowHeightsKey`.
+    @State private var rowExtraHeights: [Int: CGFloat] = [:]
 
     /// Drives a periodic re-evaluation so live data (METAR/TAF freshness
     /// labels, current-time timezone results, FX rates) refreshes on its
@@ -30,19 +34,22 @@ struct CalculatorPane: View {
                                        description: Text(error))
             } else {
                 HSplitView {
-                    AutocompletingEditor(text: Binding(
-                        get: { documents.selected.content },
-                        set: { documents.updateSelectedContent($0) }
-                    ))
+                    AutocompletingEditor(
+                        text: Binding(
+                            get: { documents.selected.content },
+                            set: { documents.updateSelectedContent($0) }
+                        ),
+                        lineExtraHeights: rowExtraHeights
+                    )
                     .frame(minWidth: 320)
-                    .background(SumiTheme.background)
+                    .background(TallyTheme.background)
 
                     resultsPane
                 }
                 .overlay(alignment: .bottomLeading) { gearButton }
             }
         }
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
         .onChange(of: documents.selectedID) { _, _ in evaluate() }
         .onChange(of: documents.selected.content) { _, _ in scheduleEvaluate() }
         .onAppear { evaluate() }
@@ -71,9 +78,16 @@ struct CalculatorPane: View {
         ScrollView {
             VStack(alignment: .trailing, spacing: 0) {
                 ForEach(results, id: \.line) { r in
-                    Text(attributedFor(r))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, minHeight: lineHeight, alignment: .trailing)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text(valueAttributed(r))
+                            .textSelection(.enabled)
+                        if let ann = annotationAttributed(r) {
+                            Text(ann)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: lineHeight, alignment: .trailing)
+                    .background(rowHeightProbe(for: r.line))
                 }
             }
             .padding(.horizontal, 18)
@@ -81,10 +95,35 @@ struct CalculatorPane: View {
             .padding(.bottom, 44)
         }
         .frame(minWidth: 240)
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
+        .onPreferenceChange(RowHeightsKey.self) { heights in
+            // Convert each row's *rendered* height into the extra
+            // vertical space we need below the matching editor line.
+            // The editor's natural line height is `lineHeight`; any
+            // overflow becomes paragraph-spacing.
+            var extras: [Int: CGFloat] = [:]
+            for (idx, h) in heights {
+                let extra = max(0, h - lineHeight)
+                if extra > 0.5 { extras[idx] = extra }
+            }
+            rowExtraHeights = extras
+        }
     }
 
-    private func attributedFor(_ r: LineResult) -> AttributedString {
+    /// Background probe that emits the rendered height of one gutter row
+    /// into `RowHeightsKey`. Anchored to the row's line index so the
+    /// editor can look up the right extra-spacing per paragraph.
+    private func rowHeightProbe(for line: Int) -> some View {
+        GeometryReader { geo in
+            Color.clear.preference(key: RowHeightsKey.self,
+                                   value: [line: geo.size.height])
+        }
+    }
+
+    /// Main result text — without the freshness annotation, which is now
+    /// rendered on its own line so it stays visible after long
+    /// multi-line METAR/TAF values.
+    private func valueAttributed(_ r: LineResult) -> AttributedString {
         // Numi-style: lines that don't parse render as blank. The user
         // figures out what's wrong from the line they're typing, not
         // from the calculator yelling at them. Empty / structural lines
@@ -98,18 +137,23 @@ struct CalculatorPane: View {
             var attr = AttributedString(display(r))
             attr.font = .system(.body, design: .monospaced)
             attr.foregroundColor = color(r)
-            if let a = r.annotation {
-                var suffix = AttributedString("  \(a.label)")
-                suffix.font = .system(size: 10.5, design: .monospaced)
-                switch a.tone {
-                case .fresh:    suffix.foregroundColor = SumiTheme.muted
-                case .stale:    suffix.foregroundColor = SumiTheme.statusCaution
-                case .outdated: suffix.foregroundColor = SumiTheme.statusBad
-                }
-                attr.append(suffix)
-            }
             return attr
         }
+    }
+
+    /// "updated X min ago" / similar freshness annotation, rendered on
+    /// its own line below the main value so a long METAR/TAF doesn't
+    /// bury it. Returns nil when there's nothing to show.
+    private func annotationAttributed(_ r: LineResult) -> AttributedString? {
+        guard let a = r.annotation else { return nil }
+        var attr = AttributedString(a.label)
+        attr.font = .system(size: 10.5, design: .monospaced)
+        switch a.tone {
+        case .fresh:    attr.foregroundColor = TallyTheme.muted
+        case .stale:    attr.foregroundColor = TallyTheme.statusCaution
+        case .outdated: attr.foregroundColor = TallyTheme.statusBad
+        }
+        return attr
     }
 
     private func display(_ r: LineResult) -> String {
@@ -130,10 +174,10 @@ struct CalculatorPane: View {
 
     private func color(_ r: LineResult) -> Color {
         switch r.kind {
-        case .error:      return SumiTheme.statusCaution
-        case .timezone:   return SumiTheme.accent
-        case .expression: return SumiTheme.text
-        default:          return SumiTheme.muted
+        case .error:      return TallyTheme.statusCaution
+        case .timezone:   return TallyTheme.accent
+        case .expression: return TallyTheme.text
+        default:          return TallyTheme.muted
         }
     }
 
@@ -145,7 +189,7 @@ struct CalculatorPane: View {
         } label: {
             Image(systemName: "gearshape")
                 .imageScale(.medium)
-                .foregroundStyle(SumiTheme.muted)
+                .foregroundStyle(TallyTheme.muted)
                 .padding(8)
                 .contentShape(Rectangle())
         }
@@ -181,8 +225,23 @@ struct CalculatorPane: View {
 // `setFrameSize` — those are the two paths that triggered the layout-
 // recursion crash in the earlier custom-NSTextView attempt.
 
+/// Collects the rendered height of each gutter row keyed by source line.
+/// Last writer wins per key — SwiftUI calls `reduce` repeatedly during
+/// layout so we merge instead of overwriting wholesale.
+private struct RowHeightsKey: PreferenceKey {
+    static var defaultValue: [Int: CGFloat] = [:]
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        for (k, v) in nextValue() { value[k] = v }
+    }
+}
+
 private struct AutocompletingEditor: NSViewRepresentable {
     @Binding var text: String
+    /// Per-source-line extra vertical space measured from the gutter
+    /// rendering. Applied as `paragraphSpacing` on each line in the text
+    /// storage so the editor's left column matches the gutter's row
+    /// heights — even when a METAR/TAF result wraps to many lines.
+    var lineExtraHeights: [Int: CGFloat] = [:]
 
     func makeNSView(context: Context) -> NSScrollView {
         let tv = AutocompletingTextView()
@@ -191,9 +250,9 @@ private struct AutocompletingEditor: NSViewRepresentable {
         tv.isSelectable = true
         tv.allowsUndo = true
         tv.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        tv.textColor = NSColor(SumiTheme.text)
-        tv.insertionPointColor = NSColor(SumiTheme.accent)
-        tv.backgroundColor = NSColor(SumiTheme.background)
+        tv.textColor = NSColor(TallyTheme.text)
+        tv.insertionPointColor = NSColor(TallyTheme.accent)
+        tv.backgroundColor = NSColor(TallyTheme.background)
         tv.drawsBackground = true
         tv.delegate = context.coordinator
         tv.textContainerInset = NSSize(width: 18, height: 14)
@@ -207,7 +266,7 @@ private struct AutocompletingEditor: NSViewRepresentable {
         tv.defaultParagraphStyle = paragraph
         tv.typingAttributes = [
             .font: tv.font!,
-            .foregroundColor: NSColor(SumiTheme.text),
+            .foregroundColor: NSColor(TallyTheme.text),
             .paragraphStyle: paragraph,
         ]
         tv.string = text
@@ -220,7 +279,7 @@ private struct AutocompletingEditor: NSViewRepresentable {
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.drawsBackground = true
-        scroll.backgroundColor = NSColor(SumiTheme.background)
+        scroll.backgroundColor = NSColor(TallyTheme.background)
 
         context.coordinator.textView = tv
         return scroll
@@ -229,7 +288,38 @@ private struct AutocompletingEditor: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let tv = scroll.documentView as? AutocompletingTextView else { return }
         if tv.string != text { tv.string = text }
+        applyPerLineSpacing(to: tv)
         tv.recomputeSuggestion()
+    }
+
+    /// Walk the text storage line by line and stamp a paragraph style on
+    /// each one. Lines whose gutter row grew (multi-line METAR/TAF result)
+    /// get the extra height as `paragraphSpacing` — invisible empty space
+    /// below the line that keeps the editor's row in vertical sync with
+    /// the gutter.
+    private func applyPerLineSpacing(to tv: NSTextView) {
+        guard let storage = tv.textStorage else { return }
+        let fullText = storage.string as NSString
+        storage.beginEditing()
+        var lineIdx = 0
+        var loc = 0
+        let total = fullText.length
+        while loc <= total {
+            let lineRange = fullText.lineRange(for: NSRange(location: loc, length: 0))
+            let extra = lineExtraHeights[lineIdx] ?? 0
+            let p = NSMutableParagraphStyle()
+            p.minimumLineHeight = 18
+            p.maximumLineHeight = 18
+            p.paragraphSpacing = extra
+            storage.addAttribute(.paragraphStyle, value: p, range: lineRange)
+            lineIdx += 1
+            // Advance past this line; bail out on the trailing empty
+            // pseudo-line so we don't loop forever at EOF.
+            let newLoc = lineRange.location + lineRange.length
+            if newLoc == loc { break }
+            loc = newLoc
+        }
+        storage.endEditing()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
@@ -315,7 +405,7 @@ private final class AutocompletingTextView: NSTextView {
 
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
-            .foregroundColor: NSColor(SumiTheme.muted).withAlphaComponent(0.55)
+            .foregroundColor: NSColor(TallyTheme.muted).withAlphaComponent(0.55)
         ]
         (suggestion as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
 
@@ -323,7 +413,7 @@ private final class AutocompletingTextView: NSTextView {
         let chipFont = NSFont.monospacedSystemFont(ofSize: 9, weight: .medium)
         let chipAttrs: [NSAttributedString.Key: Any] = [
             .font: chipFont,
-            .foregroundColor: NSColor(SumiTheme.muted).withAlphaComponent(0.7)
+            .foregroundColor: NSColor(TallyTheme.muted).withAlphaComponent(0.7)
         ]
         let ghostSize = (suggestion as NSString).size(withAttributes: attrs)
         let chip = "  ↩"

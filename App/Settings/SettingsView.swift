@@ -5,23 +5,23 @@ struct SettingsView: View {
     @EnvironmentObject var model: AppModel
 
     // General
-    @AppStorage("sumi.precision")  private var precision: Int = 14
-    @AppStorage("sumi.appearance") private var appearance: String = "system"
-    @AppStorage("sumi.menuBarOnly") private var menuBarOnly: Bool = false
+    @AppStorage("tally.precision")  private var precision: Int = 14
+    @AppStorage("tally.appearance") private var appearance: String = "system"
+    @AppStorage("tally.menuBarOnly") private var menuBarOnly: Bool = false
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
-    @AppStorage("sumi.alwaysOnTop") private var alwaysOnTop: Bool = false
+    @AppStorage("tally.alwaysOnTop") private var alwaysOnTop: Bool = false
     @State private var showDocs: Bool = false
 
     // Units (preferences shared across all panes that care)
-    @AppStorage("sumi.aviation.speedUnit")    private var speedUnit: String = "kt"
-    @AppStorage("sumi.aviation.altitudeUnit") private var altitudeUnit: String = "ft"
-    @AppStorage("sumi.aviation.pressureUnit") private var pressureUnit: String = "hPa"
+    @AppStorage("tally.aviation.speedUnit")    private var speedUnit: String = "kt"
+    @AppStorage("tally.aviation.altitudeUnit") private var altitudeUnit: String = "ft"
+    @AppStorage("tally.aviation.pressureUnit") private var pressureUnit: String = "hPa"
 
     // Module pane visibility — each toggle hides/shows the corresponding
     // pane in the top-left dropdown. Defaults match what new users got
     // before this setting existed, so nothing disappears after upgrade.
-    @AppStorage("sumi.panes.finance")      private var enableFinance      = true
-    @AppStorage("sumi.panes.aviation")     private var enableAviation     = true
+    @AppStorage("tally.panes.finance")      private var enableFinance      = true
+    @AppStorage("tally.panes.aviation")     private var enableAviation     = true
 
     var body: some View {
         Form {
@@ -55,7 +55,7 @@ struct SettingsView: View {
                     .onChange(of: menuBarOnly) { _, _ in
                         MenuBarController.shared.applyActivationPolicy()
                     }
-                Text("Menu Bar Only Mode hides the Dock icon; reopen Sumi by clicking the menu bar icon.")
+                Text("Menu Bar Only Mode hides the Dock icon; reopen Tally by clicking the menu bar icon.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -101,12 +101,12 @@ struct SettingsView: View {
                         Label("Documentation", systemImage: "book")
                     }
                     Button("Send feedback") {
-                        if let url = URL(string: "mailto:feedback@sumi.app?subject=Sumi%20feedback") {
+                        if let url = URL(string: "mailto:feedback@tally.app?subject=Tally%20feedback") {
                             NSWorkspace.shared.open(url)
                         }
                     }
                     Spacer()
-                    Text("Sumi \(Bundle.main.shortVersion) (\(Bundle.main.buildVersion))")
+                    Text("Tally \(Bundle.main.shortVersion) (\(Bundle.main.buildVersion))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -114,7 +114,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .frame(width: 480, height: 540)
-        // `themedSheet` applies SumiTheme.background AND the user's
+        // `themedSheet` applies TallyTheme.background AND the user's
         // light/dark preference. Without it the Settings window ignores
         // the Appearance picker the user just changed.
         .themedSheet()
@@ -126,7 +126,7 @@ struct SettingsView: View {
 }
 
 /// Pins the host window to .floating when Always-on-Top is on, matching
-/// the main Sumi window so Settings doesn't end up hidden behind it.
+/// the main Tally window so Settings doesn't end up hidden behind it.
 private struct WindowLevelApplier: NSViewRepresentable {
     let alwaysOnTop: Bool
     func makeNSView(context: Context) -> NSView { NSView() }

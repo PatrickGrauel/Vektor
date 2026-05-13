@@ -11,7 +11,7 @@ import Foundation
 public final class MetarCacheBridge {
     public static let shared = MetarCacheBridge()
 
-    public static let notificationName = Notification.Name("sumi.metarCache.updated")
+    public static let notificationName = Notification.Name("tally.metarCache.updated")
 
     public struct Entry {
         public let kind: MetarService.ReportKind

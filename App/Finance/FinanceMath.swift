@@ -150,7 +150,7 @@ enum FinanceMath {
     // MARK: - Formatting
 
     static func money(_ value: Double, code: String) -> String {
-        let dp = max(0, min(14, UserDefaults.standard.object(forKey: "sumi.precision") as? Int ?? 2))
+        let dp = max(0, min(14, UserDefaults.standard.object(forKey: "tally.precision") as? Int ?? 2))
         let formatter = NumberFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.usesGroupingSeparator = true

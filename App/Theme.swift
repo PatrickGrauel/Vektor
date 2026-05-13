@@ -1,11 +1,11 @@
 import SwiftUI
 import AppKit
 
-/// Numi-inspired palette. Dark variant pulled from the Sumi icon (navy);
+/// Numi-inspired palette. Dark variant pulled from the Tally icon (navy);
 /// light variant is a warm off-white with deep ink text. Each token is an
 /// `NSColor`-backed dynamic colour that re-resolves when the system or the
 /// user's appearance preference changes.
-enum SumiTheme {
+enum TallyTheme {
     /// Window / canvas background.
     static let background = dyn(
         dark:  NSColor(red: 0x0E/255, green: 0x15/255, blue: 0x21/255, alpha: 1),

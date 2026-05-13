@@ -22,7 +22,7 @@ struct E6BView: View {
         }
     }
 
-    @AppStorage("sumi.e6b.tab") private var selected: String = E6BTab.wind.rawValue
+    @AppStorage("tally.e6b.tab") private var selected: String = E6BTab.wind.rawValue
     private var binding: Binding<E6BTab> {
         Binding(
             get: { E6BTab(rawValue: selected) ?? .wind },
@@ -47,9 +47,9 @@ struct E6BView: View {
                             .frame(maxWidth: .infinity)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(isActive ? SumiTheme.surface : Color.clear)
+                                    .fill(isActive ? TallyTheme.surface : Color.clear)
                             )
-                            .foregroundStyle(isActive ? SumiTheme.text : SumiTheme.muted)
+                            .foregroundStyle(isActive ? TallyTheme.text : TallyTheme.muted)
                     }
                     .buttonStyle(.plain)
                 }
@@ -57,7 +57,7 @@ struct E6BView: View {
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(SumiTheme.surface.opacity(0.4))
+                    .fill(TallyTheme.surface.opacity(0.4))
             )
             .padding([.horizontal, .top], 12)
 
@@ -72,6 +72,6 @@ struct E6BView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
     }
 }

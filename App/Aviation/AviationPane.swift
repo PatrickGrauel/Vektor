@@ -6,7 +6,7 @@ import SwiftUI
 /// of three. Order follows a typical pre-flight workflow: weather →
 /// flight planning → aircraft loading.
 struct AviationPane: View {
-    @AppStorage("sumi.aviation.tab") private var rawTab: String = AviationTab.metar.rawValue
+    @AppStorage("tally.aviation.tab") private var rawTab: String = AviationTab.metar.rawValue
 
     private var tab: AviationTab {
         AviationTab(rawValue: rawTab) ?? .metar
@@ -36,7 +36,7 @@ struct AviationPane: View {
                 }
             }
         }
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
     }
 }
 

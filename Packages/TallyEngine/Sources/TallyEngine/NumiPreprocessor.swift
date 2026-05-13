@@ -75,6 +75,7 @@ struct NumiPreprocessor {
         s = rewritePercentages(s)
         s = rewriteTimeUnits(s)
         s = rewriteHmsFormat(s)
+        s = rewriteInchAmbiguity(s)
         s = rewriteConversion(s)
         s = rewritePrev(s, previousValues: previousValues)
         s = rewriteAggregates(s, previousValues: previousValues)
@@ -649,6 +650,30 @@ struct NumiPreprocessor {
         return s
     }
 
+    // MARK: - Inch / `in` ambiguity
+    //
+    // math.js treats `in` as BOTH the conversion operator and the inch unit.
+    // That makes `1 in in cm` and `3 ft 6 in in cm` (both in the docs) parse
+    // incorrectly. Disambiguate by rewriting the inch-as-unit usage to
+    // `inch` *before* the conversion pass swaps `in` → `to`.
+
+    private func rewriteInchAmbiguity(_ input: String) -> String {
+        var s = input
+        // "3 ft 6 in" (US-style plain-text feet/inches) → "(3 ft + 6 inch)".
+        // Without this, math.js multiplies the tokens instead of summing.
+        s = replaceMatches(in: s,
+                           pattern: #"(\d+(?:\.\d+)?)\s+ft\s+(\d+(?:\.\d+)?)\s+in\b"#) { groups in
+            return "(\(groups[1]) ft + \(groups[2]) inch)"
+        }
+        // Standalone "<n> in" followed by a conversion keyword — `in` here
+        // is the unit, not the operator. `\b` keeps us off `into`.
+        s = replaceMatches(in: s,
+                           pattern: #"(\d+(?:\.\d+)?)\s+in\b(?=\s+(?:in|into|as|to)\s)"#) { groups in
+            return "\(groups[1]) inch"
+        }
+        return s
+    }
+
     // MARK: - Conversion ("X in Y", "X to Y", "X as Y" → "X to Y")
 
     private func rewriteConversion(_ input: String) -> String {
@@ -699,6 +724,13 @@ struct NumiPreprocessor {
         s = s.replacingOccurrences(
             of: "\\s+\(convWord)\\s+(\(unit))",
             with: " to $1",
+            options: .regularExpression
+        )
+        // `min` collides with math.js's `min()` function — when used as a
+        // conversion target, force the unambiguous unit spelling.
+        s = s.replacingOccurrences(
+            of: #"\bto\s+min\b"#,
+            with: "to minute",
             options: .regularExpression
         )
         return s

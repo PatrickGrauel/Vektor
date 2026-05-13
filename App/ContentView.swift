@@ -1,5 +1,5 @@
 import SwiftUI
-import SumiEngine
+import TallyEngine
 
 enum Pane: String, CaseIterable, Identifiable {
     case calculator   = "Calculator"
@@ -32,8 +32,8 @@ enum Pane: String, CaseIterable, Identifiable {
     var enabledKey: String? {
         switch self {
         case .calculator, .timezone: return nil
-        case .finance:               return "sumi.panes.finance"
-        case .aviation:              return "sumi.panes.aviation"
+        case .finance:               return "tally.panes.finance"
+        case .aviation:              return "tally.panes.aviation"
         }
     }
 
@@ -89,7 +89,7 @@ final class AppModel: ObservableObject {
     }
 
     func bootstrapLiveData() async {
-        let oxrKey = UserDefaults.standard.string(forKey: "sumi.fx.openExchangeRatesKey") ?? ""
+        let oxrKey = UserDefaults.standard.string(forKey: "tally.fx.openExchangeRatesKey") ?? ""
         if !oxrKey.isEmpty {
             fxSourceLabel = "OpenExchangeRates"
             if let snap = await fx.snapshot(using: .openExchangeRates(appId: oxrKey)) {
@@ -165,13 +165,13 @@ struct ContentView: View {
     @State private var selection: Pane = .calculator
     @State private var showPaneMenu = false
     @State private var showDocsPopover = false
-    @AppStorage("sumi.appearance") private var appearance: String = "system"
+    @AppStorage("tally.appearance") private var appearance: String = "system"
 
     // Per-module enabled flags. Default to true so existing users don't
     // lose features after an update; new users can trim the menu down
     // from Settings.
-    @AppStorage("sumi.panes.finance")      private var enableFinance      = true
-    @AppStorage("sumi.panes.aviation")     private var enableAviation     = true
+    @AppStorage("tally.panes.finance")      private var enableFinance      = true
+    @AppStorage("tally.panes.aviation")     private var enableAviation     = true
 
     /// Panes currently visible in the dropdown — core panes are always
     /// included, the rest are filtered by the per-module Settings toggles.
@@ -187,10 +187,13 @@ struct ContentView: View {
 
     var body: some View {
         paneContent
-            .navigationTitle("")
+            // Let the WindowGroup("Tally") title surface in the title bar
+            // — macOS renders it centered above the toolbar, matching
+            // Numi-style.
+            .navigationTitle("Tally")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SumiTheme.background.ignoresSafeArea())
-            .toolbarBackground(SumiTheme.background, for: .windowToolbar)
+            .background(TallyTheme.background.ignoresSafeArea())
+            .toolbarBackground(TallyTheme.background, for: .windowToolbar)
             .toolbarBackground(.visible, for: .windowToolbar)
             .preferredColorScheme(colorScheme(for: appearance))
             .environmentObject(calculatorBridge)
@@ -238,7 +241,7 @@ struct ContentView: View {
                                     Spacer()
                                     if pane == selection {
                                         Image(systemName: "checkmark")
-                                            .foregroundStyle(SumiTheme.accent)
+                                            .foregroundStyle(TallyTheme.accent)
                                     }
                                 }
                             }
@@ -254,15 +257,15 @@ struct ContentView: View {
                         // every other pane uses its SF symbol.
                         Group {
                             if selection == .calculator {
-                                Image(nsImage: SumiGlyph.nsImage(
+                                Image(nsImage: TallyGlyph.nsImage(
                                     size: 18,
-                                    color: NSColor(SumiTheme.accent)
+                                    color: NSColor(TallyTheme.accent)
                                 ))
                                 .renderingMode(.original)
                             } else {
                                 Image(systemName: selection.icon)
                                     .imageScale(.large)
-                                    .foregroundStyle(SumiTheme.text)
+                                    .foregroundStyle(TallyTheme.text)
                             }
                         }
                         .frame(width: 22, height: 22)
@@ -290,7 +293,7 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: "plus")
                                 .imageScale(.large)
-                                .foregroundStyle(SumiTheme.text)
+                                .foregroundStyle(TallyTheme.text)
                                 .frame(width: 22, height: 22)
                                 .contentShape(Rectangle())
                         } primaryAction: {
@@ -309,7 +312,7 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: "line.3.horizontal")
                                 .imageScale(.large)
-                                .foregroundStyle(SumiTheme.text)
+                                .foregroundStyle(TallyTheme.text)
                                 .frame(width: 22, height: 22)
                                 .contentShape(Rectangle())
                         } primaryAction: {

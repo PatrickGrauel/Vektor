@@ -1,5 +1,5 @@
 import XCTest
-@testable import SumiEngine
+@testable import TallyEngine
 
 final class SuggestionEngineTests: XCTestCase {
 

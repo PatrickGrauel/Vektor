@@ -1,6 +1,6 @@
 import SwiftUI
-import SumiAviation
-import SumiEngine
+import TallyAviation
+import TallyEngine
 
 struct MetarView: View {
     @State private var icao: String = "KSFO"
@@ -95,7 +95,7 @@ struct MetarView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(SumiTheme.background)
+        .background(TallyTheme.background)
         .onChange(of: icao) { _, newValue in scheduleFetch(newValue) }
         .onAppear {
             scheduleFetch(icao, immediate: true)
@@ -182,7 +182,7 @@ struct MetarView: View {
                     LabeledContent("Trend") {
                         Text(trend)
                             .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(SumiTheme.accent)
+                            .foregroundStyle(TallyTheme.accent)
                             .help("ICAO trend forecast valid for the next 2 hours")
                     }
                 }

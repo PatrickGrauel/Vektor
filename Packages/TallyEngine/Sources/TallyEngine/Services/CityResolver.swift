@@ -29,7 +29,7 @@ public actor CityResolver {
 
     /// Fires every time the resolver successfully resolves a previously
     /// unknown query. The calculator pane re-evaluates on this.
-    public static let notificationName = Notification.Name("sumi.cityResolver.updated")
+    public static let notificationName = Notification.Name("tally.cityResolver.updated")
 
     public static let shared = CityResolver()
 

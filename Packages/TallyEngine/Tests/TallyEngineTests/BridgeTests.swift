@@ -1,5 +1,5 @@
 import XCTest
-@testable import SumiEngine
+@testable import TallyEngine
 
 @MainActor
 final class BridgeTests: XCTestCase {
