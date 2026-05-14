@@ -164,13 +164,19 @@ struct CalculatorPane: View {
     }
 
     /// Pattern: an ICAO wind-group gust component like `G25KT`. We mark
-    /// the whole `G\d{2,3}KT` token in red when the gust value is
-    /// strictly above 20 kt. Captured anywhere on the line so it
-    /// triggers in TEMPO / BECMG / PROBxx blocks of TAFs too — pilots
-    /// don't care which group the high gust lives in, only that it's
-    /// forecast.
+    /// the whole `G\d{2,3}KT` token in the accent colour (same orange
+    /// as the "expect RWY" suggestion) when the gust value is strictly
+    /// above 20 kt. Captured anywhere on the line so it triggers in
+    /// TEMPO / BECMG / PROBxx blocks of TAFs too — pilots don't care
+    /// which group the high gust lives in, only that it's forecast.
+    ///
+    /// No leading `\b`: in a real wind group like `24015G25KT` the
+    /// character before `G` is a digit, which is a word character, so
+    /// `\b` wouldn't match. Anchoring on the trailing `\b` after `KT`
+    /// is enough to keep us off false positives (e.g. `G25KTS` would
+    /// fail to match — though no real METAR uses that suffix).
     private static let highGustRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"\bG(\d{2,3})KT\b"#)
+        try? NSRegularExpression(pattern: #"G(\d{2,3})KT\b"#)
     }()
 
     private static func applyHighGustHighlight(to attr: inout AttributedString, lineStr: String) {
@@ -189,7 +195,7 @@ struct CalculatorPane: View {
             // from `searchStart` so multiple gust tokens on the same
             // line each get highlighted independently.
             if let range = attr[searchStart...].range(of: token) {
-                attr[range].foregroundColor = TallyTheme.statusBad
+                attr[range].foregroundColor = TallyTheme.accent
                 searchStart = range.upperBound
             }
         }
