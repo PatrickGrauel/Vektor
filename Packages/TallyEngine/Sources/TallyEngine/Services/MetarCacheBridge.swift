@@ -35,14 +35,19 @@ public final class MetarCacheBridge {
     private var lastUsed: [String: Date] = [:]
     private let service: MetarService
 
-    /// Minimum interval (seconds) between upstream refresh attempts for the
-    /// same station+kind. Picked to be a fraction of the shortest METAR
-    /// cadence (30 min international) so we always check at least a few
-    /// times per cycle but never hammer the API.
-    private static let attemptCooldown: TimeInterval = 5 * 60     // 5 minutes
-    /// After how long a cache entry becomes stale enough that an attempt
-    /// is worth making (subject to the cooldown above).
-    private static let staleAfter: TimeInterval = 5 * 60          // 5 minutes
+    /// Hard anti-hammer guard. We will NEVER fire more than one
+    /// refresh per key inside this window — protects the upstream API
+    /// from a keystroke-rate flood when the user is typing in the
+    /// calculator (every keystroke triggers a re-evaluate that calls
+    /// `prefetch`).
+    private static let minimumFetchInterval: TimeInterval = 30
+    /// Soft cap on "quiet" time between proactive fetches. Even if the
+    /// upstream issuance schedule says the cached entry is still the
+    /// latest expected report, retry after this window to catch off-
+    /// schedule updates (SPECI METARs, mid-cycle TAF amendments, ATIS
+    /// letter rotations). Keep small enough that a stale entry can't
+    /// linger more than a few minutes longer than it should.
+    private static let maxQuietWindow: TimeInterval = 10 * 60     // 10 minutes
     /// Hard cap on in-memory entries. The on-disk `metar.cache.json` is
     /// the source of truth for older lookups; this bridge is a hot layer.
     public static let maxEntries: Int = 25
@@ -87,11 +92,30 @@ public final class MetarCacheBridge {
         return nil
     }
 
-    /// Kick off an async fetch. Safe to call on every evaluate cycle — we
-    /// dedupe via a per-key cooldown so the network only sees one refresh
-    /// attempt per 5 minutes regardless of how often the caller asks.
-    /// On success we update the cache and post a notification so the
-    /// engine re-evaluates and the gutter shows the fresh data.
+    /// Kick off an async fetch. Safe to call on every evaluate cycle —
+    /// we dedupe via per-key cooldowns so the network only sees one
+    /// attempt per `minimumFetchInterval` regardless of how often the
+    /// caller asks. On success we update the cache and post a
+    /// notification so the engine re-evaluates and the gutter shows
+    /// the fresh data.
+    ///
+    /// Staleness decision (in order):
+    ///   1. Hard anti-hammer: any fetch attempt in the last 30 s ⇒ skip.
+    ///   2. Soft cap: if last successful fetch ≥ 10 min ago ⇒ fetch.
+    ///   3. Issuance schedule: ask `NumiEngine.nextExpectedIssuance` —
+    ///      if the upstream issuance window for this kind has passed
+    ///      since the cached entry's observation time ⇒ fetch.
+    ///   4. Otherwise ⇒ skip (cached entry IS the latest expected).
+    ///
+    /// Critically, staleness is judged against the cached entry's
+    /// *observation time*, not its local fetch time. Previously the
+    /// bridge used fetch time, which meant once we successfully
+    /// fetched an old report (e.g. an overnight TAF from 18:00 UTC
+    /// for an airport closed at night) the bridge would refuse to
+    /// re-fetch for 5 minutes — and on every subsequent re-evaluate
+    /// the cooldown reset, locking the bridge onto the stale entry
+    /// for the rest of the process lifetime. The user could not
+    /// force a refresh except by quitting and relaunching.
     public func prefetch(kind: MetarService.ReportKind, icao: String) {
         // Canonicalise so a 3-letter IATA gets resolved to its 4-letter
         // ICAO before we touch the cache, the cooldown table, or the
@@ -107,17 +131,36 @@ public final class MetarCacheBridge {
         // we end up short-circuiting on cooldown.
         lastUsed[key] = now
 
-        // Skip if the cache is still fresh.
-        if let existing = entries[key],
-           now.timeIntervalSince(existing.fetchedAt) < Self.staleAfter {
-            return
-        }
-        // Skip if we attempted recently (regardless of success), so racing
-        // callers don't fan out.
+        // (1) Hard anti-hammer guard — applies to BOTH attempts and
+        //     successful fetches.
         if let last = lastAttempt[key],
-           now.timeIntervalSince(last) < Self.attemptCooldown {
+           now.timeIntervalSince(last) < Self.minimumFetchInterval {
             return
         }
+        if let existing = entries[key],
+           now.timeIntervalSince(existing.fetchedAt) < Self.minimumFetchInterval {
+            return
+        }
+
+        // (2) Soft cap: even when the issuance schedule says the cached
+        //     entry is still current, force a refresh if we haven't
+        //     checked in a while. Catches off-schedule updates.
+        let sinceFetch: TimeInterval? = entries[key].map { now.timeIntervalSince($0.fetchedAt) }
+        let withinQuietWindow = (sinceFetch ?? .infinity) < Self.maxQuietWindow
+
+        // (3) Issuance schedule check: only applicable inside the soft cap.
+        if withinQuietWindow, let existing = entries[key] {
+            let referenceTime = NumiEngine.observationTime(in: existing.raw) ?? existing.fetchedAt
+            let nextIssuance = NumiEngine.nextExpectedIssuance(
+                for: kind, rawCached: existing.raw, after: referenceTime
+            )
+            if nextIssuance > now {
+                // Upstream hasn't published a new report yet by its own
+                // cadence — the cached entry IS the latest. Skip.
+                return
+            }
+        }
+
         lastAttempt[key] = now
 
         // Skip if a prefetch is already in flight for this key. Without
