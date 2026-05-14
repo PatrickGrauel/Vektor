@@ -23,6 +23,12 @@ struct SettingsView: View {
     // before this setting existed, so nothing disappears after upgrade.
     @AppStorage("tally.panes.finance")      private var enableFinance      = true
     @AppStorage("tally.panes.aviation")     private var enableAviation     = true
+    @AppStorage("tally.panes.stocks")       private var enableStocks       = false
+
+    // Advanced — collapsed by default. The FMP API key powers the
+    // Stocks pane. Stored in UserDefaults as part of `tally.stocks.*`.
+    @AppStorage("tally.stocks.fmpApiKey")   private var fmpApiKey: String = ""
+    @State private var showAdvanced: Bool = false
 
     var body: some View {
         Form {
@@ -76,6 +82,10 @@ struct SettingsView: View {
                 Toggle(Pane.aviation.moduleTitle, isOn: $enableAviation)
                 Text(Pane.aviation.moduleDescription)
                     .font(.caption).foregroundStyle(.secondary)
+
+                Toggle(Pane.stocks.moduleTitle, isOn: $enableStocks)
+                Text(Pane.stocks.moduleDescription)
+                    .font(.caption).foregroundStyle(.secondary)
             } header: {
                 Text("Tools")
             } footer: {
@@ -97,6 +107,27 @@ struct SettingsView: View {
                 Picker("Pressure", selection: $pressureUnit) {
                     Text("hPa").tag("hPa")
                     Text("inHg").tag("inHg")
+                }
+            }
+
+            // MARK: Advanced — collapsed by default, hosts the API keys
+            // that don't fit anywhere else (currently just FMP for the
+            // Stocks pane). Tapping the header expands / collapses.
+            Section {
+                DisclosureGroup(isExpanded: $showAdvanced) {
+                    LabeledContent("FMP API key") {
+                        SecureField("", text: $fmpApiKey)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 260)
+                            .onChange(of: fmpApiKey) { _, new in
+                                Task { await FMPClient.shared.setAPIKey(new.isEmpty ? nil : new) }
+                            }
+                    }
+                    Text("Financial Modeling Prep powers the Stocks pane. The free tier covers about 50 analyses per day. [Get a key](https://site.financialmodelingprep.com/developer/docs)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } label: {
+                    Label("Advanced", systemImage: "wrench.and.screwdriver")
                 }
             }
 

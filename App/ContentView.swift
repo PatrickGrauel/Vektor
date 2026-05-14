@@ -7,6 +7,7 @@ enum Pane: String, CaseIterable, Identifiable {
     case timezone     = "Timezone"
     case finance      = "Finance"
     case aviation     = "Aviation"
+    case stocks       = "Stocks"
 
     var id: String { rawValue }
     var icon: String {
@@ -15,6 +16,7 @@ enum Pane: String, CaseIterable, Identifiable {
         case .timezone:     return "globe"
         case .finance:      return "dollarsign.circle"
         case .aviation:     return "airplane"
+        case .stocks:       return "chart.line.uptrend.xyaxis"
         }
     }
 
@@ -35,6 +37,7 @@ enum Pane: String, CaseIterable, Identifiable {
         case .calculator, .timezone: return nil
         case .finance:               return "tally.panes.finance"
         case .aviation:              return "tally.panes.aviation"
+        case .stocks:                return "tally.panes.stocks"
         }
     }
 
@@ -43,6 +46,7 @@ enum Pane: String, CaseIterable, Identifiable {
         switch self {
         case .finance:      return "Finance"
         case .aviation:     return "Aviation"
+        case .stocks:       return "Stocks"
         default:            return rawValue
         }
     }
@@ -52,6 +56,7 @@ enum Pane: String, CaseIterable, Identifiable {
         switch self {
         case .finance:      return "Loan, mortgage, real-estate deal analysis, tip & split."
         case .aviation:     return "METAR / TAF / ATIS, E6B flight computer, weight & balance."
+        case .stocks:       return "Score a public company against Warren Buffett's Durable Competitive Advantage framework."
         default:            return ""
         }
     }
@@ -253,6 +258,10 @@ struct ContentView: View {
     // from Settings.
     @AppStorage("tally.panes.finance")      private var enableFinance      = true
     @AppStorage("tally.panes.aviation")     private var enableAviation     = true
+    // Stocks defaults to OFF — pulling financial data needs the user's
+    // FMP API key, which is an explicit opt-in, so the pane stays hidden
+    // until the user enables it in Settings.
+    @AppStorage("tally.panes.stocks")       private var enableStocks       = false
 
     /// Panes currently visible in the dropdown — core panes are always
     /// included, the rest are filtered by the per-module Settings toggles.
@@ -262,6 +271,7 @@ struct ContentView: View {
             case .calculator, .timezone: return true
             case .finance:               return enableFinance
             case .aviation:              return enableAviation
+            case .stocks:                return enableStocks
             }
         }
     }
@@ -418,6 +428,7 @@ struct ContentView: View {
         case .timezone:     TimezoneView()
         case .finance:      FinancePane()
         case .aviation:     AviationPane()
+        case .stocks:       StocksPane()
         }
     }
 
