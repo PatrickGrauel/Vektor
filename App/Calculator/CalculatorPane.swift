@@ -135,9 +135,29 @@ struct CalculatorPane: View {
             blank.font = .system(.body, design: .monospaced)
             return blank
         default:
-            var attr = AttributedString(display(r))
-            attr.font = .system(.body, design: .monospaced)
-            attr.foregroundColor = color(r)
+            // Build the attributed string line-by-line so we can colour
+            // runway-wind suggestion lines (anything starting with
+            // "expect RWY ") in the accent colour. The rest of the
+            // value renders in the kind's normal colour. Keeps the
+            // engine→renderer coupling minimal — the engine just emits
+            // text, the renderer recognises the marker prefix.
+            let text = display(r)
+            let baseColor = color(r)
+            var attr = AttributedString("")
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            for (idx, line) in lines.enumerated() {
+                var lineAttr = AttributedString(String(line))
+                lineAttr.font = .system(.body, design: .monospaced)
+                if line.hasPrefix("expect RWY") {
+                    lineAttr.foregroundColor = TallyTheme.accent
+                } else {
+                    lineAttr.foregroundColor = baseColor
+                }
+                attr += lineAttr
+                if idx < lines.count - 1 {
+                    attr += AttributedString("\n")
+                }
+            }
             return attr
         }
     }

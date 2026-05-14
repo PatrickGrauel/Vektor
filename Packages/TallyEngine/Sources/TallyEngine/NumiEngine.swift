@@ -521,6 +521,14 @@ public final class NumiEngine {
             MainActor.assumeIsolated { bridge.prefetch(kind: kind, icao: icao) }
             if let cached = MainActor.assumeIsolated({ bridge.cached(kind: kind, icao: icao) }) {
                 sections.append(cached.raw)
+                // For METARs only (not TAF/ATIS), see if we can offer a
+                // wind-based runway suggestion. Appended as a second
+                // visual row right under the raw report. Format:
+                //   expect RWY 26L · Hw 4 · Xc 0
+                //   expect RWY 26L · Hw 15 (G25) · Xc 3 (G5)
+                if kind == .metar, let advice = Self.runwayWindAdvice(forICAO: icao, metarRaw: cached.raw) {
+                    sections.append(Self.formatRunwayAdvice(advice))
+                }
                 // Pilots care about the *observation* / *issue* time (the
                 // Zulu stamp in the report), not when we happened to fetch
                 // it locally. Fall back to fetch time if the stamp is
@@ -603,6 +611,47 @@ public final class NumiEngine {
             }
         }
         return sections.joined(separator: "\n")
+    }
+
+    /// Look up runways for the airport, parse the METAR's wind group,
+    /// and return the best runway-end suggestion. Returns nil if the
+    /// airport has no runway data, the METAR has no parseable wind,
+    /// or the wind is too light to prefer any runway.
+    private static func runwayWindAdvice(forICAO icao: String, metarRaw: String) -> RunwayWindAdvisor.Advice? {
+        let canonical = AirportCodeMap.canonicalICAO(from: icao) ?? icao
+        let runways = RunwayDatabase.shared.runways(forICAO: canonical)
+        guard !runways.isEmpty else { return nil }
+        let decoded = MetarParser.parse(metarRaw)
+        return RunwayWindAdvisor.advise(metar: decoded, runways: runways)
+    }
+
+    /// Render an `Advice` as the user-facing "expect RWY …" line.
+    /// Single-line, dot-separated, with gust components in parens.
+    static func formatRunwayAdvice(_ a: RunwayWindAdvisor.Advice) -> String {
+        let head: String
+        if a.isTailwind {
+            // Headwind component is negative — call it tailwind so the
+            // pilot sees the right sign.
+            let tw = abs(a.headwindKt)
+            if let hg = a.headwindGustKt {
+                head = "Tw \(tw) (G\(abs(hg)))"
+            } else {
+                head = "Tw \(tw)"
+            }
+        } else {
+            if let hg = a.headwindGustKt {
+                head = "Hw \(a.headwindKt) (G\(hg))"
+            } else {
+                head = "Hw \(a.headwindKt)"
+            }
+        }
+        let cross: String
+        if let xg = a.crosswindGustKt {
+            cross = "Xc \(a.crosswindKt) (G\(xg))"
+        } else {
+            cross = "Xc \(a.crosswindKt)"
+        }
+        return "expect RWY \(a.designator) · \(head) · \(cross)"
     }
 
     private static func formatRunway(_ r: RunwayInfo) -> String {
