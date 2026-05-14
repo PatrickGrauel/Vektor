@@ -55,8 +55,15 @@ struct SettingsView: View {
                     .onChange(of: menuBarOnly) { _, _ in
                         MenuBarController.shared.applyActivationPolicy()
                     }
-                Text("Menu Bar Only Mode hides the Dock icon; reopen Tally by clicking the menu bar icon.")
+                Text("Menu Bar Only Mode hides the Dock icon; reopen Tally by clicking the menu bar icon. macOS sometimes leaves the Dock icon visible until the next launch — use **Relaunch Tally** below if it sticks.")
                     .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Spacer()
+                    Button("Relaunch Tally") {
+                        MenuBarController.shared.relaunch()
+                    }
+                    .help("Quit and reopen Tally. The cleanest way to apply Menu Bar Only Mode if the Dock icon doesn't disappear.")
+                }
             }
 
             // MARK: Tools — pane visibility

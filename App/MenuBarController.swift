@@ -216,13 +216,43 @@ final class MenuBarController: NSObject {
     func applyActivationPolicy() {
         if isMenuBarOnly() {
             NSApp.setActivationPolicy(.accessory)
+            // macOS limitation: setting `.accessory` from `.regular` at
+            // runtime SETS the policy correctly but the Dock icon often
+            // persists visually until the next user-driven activation
+            // edge. `deactivate()` nudges AppKit to refresh the Dock
+            // state immediately in most cases. The fully-reliable path
+            // is a process relaunch (see `relaunch()`).
+            DispatchQueue.main.async {
+                NSApp.deactivate()
+            }
         } else {
             NSApp.setActivationPolicy(.regular)
+            // .accessory → .regular is the supported direction and works
+            // immediately; activate so the window comes to the front
+            // visually too.
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
     private func isMenuBarOnly() -> Bool {
         UserDefaults.standard.bool(forKey: "tally.menuBarOnly")
+    }
+
+    /// Relaunch Tally cleanly. The only fully reliable way to drop the
+    /// Dock icon when transitioning to Menu-Bar-Only mode mid-session
+    /// (and the only way to be sure the menu/activation state is in a
+    /// clean state after any settings change). Sandbox-safe: opens the
+    /// app bundle via NSWorkspace, then terminates the current process.
+    func relaunch() {
+        let url = Bundle.main.bundleURL
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.createsNewApplicationInstance = true
+        Task {
+            // Best-effort: even if `openApplication` returns an error,
+            // still terminate so the user doesn't see a broken half-state.
+            _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: cfg)
+            await MainActor.run { NSApp.terminate(nil) }
+        }
     }
 
     // MARK: - Icon
