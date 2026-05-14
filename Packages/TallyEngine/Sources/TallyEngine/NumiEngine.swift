@@ -189,6 +189,11 @@ public final class NumiEngine {
                 continue
             }
 
+            if let notam = Self.handleNotamLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: notam, kind: .expression))
+                continue
+            }
+
             let prep = preprocessor.transform(raw, previousValues: previousValues)
             if prep.isLabelOnly {
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .label))
@@ -664,6 +669,70 @@ public final class NumiEngine {
             cross = "Xw \(a.crosswindKt)"
         }
         return "expect RWY \(a.designator) · \(head) · \(cross)"
+    }
+
+    // MARK: - NOTAMs
+
+    /// Recognise `NOTAM EDDM` (with optional multi-ICAO list) and
+    /// return a formatted NOTAM listing per station. Each station
+    /// shows up to 50 NOTAMs. Returns nil if the line doesn't match.
+    static func handleNotamLine(_ line: String) -> String? {
+        let pattern = #"^NOTAMS?\s+([A-Z]{3,4}(?:\s+[A-Z]{3,4})*)$"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              re.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+        else { return nil }
+        let tokens = line.split(separator: " ", omittingEmptySubsequences: true).map { String($0).uppercased() }
+        let icaos = Array(tokens.dropFirst())
+
+        let bridge = MainActor.assumeIsolated { NotamCacheBridge.shared }
+
+        var blocks: [String] = []
+        for icao in icaos {
+            let canon = AirportCodeMap.canonicalICAO(from: icao) ?? icao
+            MainActor.assumeIsolated { bridge.prefetch(icao: canon) }
+            let state = MainActor.assumeIsolated { bridge.cached(icao: canon) }
+            blocks.append(formatNotamBlock(canon: canon, state: state ?? .pending))
+        }
+        return blocks.joined(separator: "\n\n")
+    }
+
+    private static func formatNotamBlock(canon: String, state: NotamCacheBridge.State) -> String {
+        switch state {
+        case .pending:
+            return "\(canon) — Fetching NOTAMs…"
+        case .empty:
+            return "\(canon) — no active NOTAMs"
+        case .unauthenticated:
+            return "\(canon) — set your FAA NOTAM API key in Settings → Aviation"
+        case .error(let msg):
+            return "\(canon) — \(msg)"
+        case .ok(let snap):
+            var lines: [String] = ["\(canon) — \(snap.notams.count) NOTAM\(snap.notams.count == 1 ? "" : "s")"]
+            let fmt = DateFormatter()
+            fmt.dateFormat = "dd MMM HH:mm'Z'"
+            fmt.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? .current
+            fmt.locale = Locale(identifier: "en_US_POSIX")
+            for n in snap.notams.prefix(20) {
+                let start = n.effectiveStart.map(fmt.string(from:)) ?? "—"
+                let end = n.effectiveEnd.map(fmt.string(from:)) ?? "permanent"
+                lines.append("  \(n.id)  \(start) → \(end)")
+                // Indent + collapse internal whitespace in the body.
+                let body = n.text
+                    .split(separator: "\n", omittingEmptySubsequences: true)
+                    .joined(separator: " ")
+                    .trimmingCharacters(in: .whitespaces)
+                if !body.isEmpty {
+                    // Soft-wrap manually at ~80 chars so the line
+                    // doesn't blow out the calculator pane on wide
+                    // NOTAMs. The renderer will wrap further if needed.
+                    lines.append("    \(body)")
+                }
+            }
+            if snap.notams.count > 20 {
+                lines.append("  … \(snap.notams.count - 20) more")
+            }
+            return lines.joined(separator: "\n")
+        }
     }
 
     // MARK: - Sun events

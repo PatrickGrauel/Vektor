@@ -60,6 +60,9 @@ struct CalculatorPane: View {
         .onReceive(NotificationCenter.default.publisher(for: MetarCacheBridge.notificationName)) { _ in
             evaluate()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NotamCacheBridge.notificationName)) { _ in
+            evaluate()
+        }
         // FX or crypto rates just landed in the JSContext — re-evaluate so
         // currency conversions stop showing the offline placeholder.
         // Without this the user sees `100 EUR + 25 USD = 125 USD` (1:1)

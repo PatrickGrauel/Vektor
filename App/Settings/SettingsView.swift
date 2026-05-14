@@ -17,6 +17,13 @@ struct SettingsView: View {
     @AppStorage("tally.aviation.altitudeUnit") private var altitudeUnit: String = "ft"
     @AppStorage("tally.aviation.pressureUnit") private var pressureUnit: String = "hPa"
 
+    // FAA NOTAM Search API credentials. Register a free account at
+    // https://api.faa.gov, create an app, paste the resulting
+    // client_id and client_secret here. Without them the `NOTAM ICAO`
+    // calculator command renders an "unauthenticated" message.
+    @AppStorage("tally.notam.faaClientId")      private var faaClientId: String = ""
+    @AppStorage("tally.notam.faaClientSecret")  private var faaClientSecret: String = ""
+
     // Module pane visibility — each toggle hides/shows the corresponding
     // pane in the top-left dropdown. Defaults match what new users got
     // before this setting existed, so nothing disappears after upgrade.
@@ -97,6 +104,33 @@ struct SettingsView: View {
                     Text("hPa").tag("hPa")
                     Text("inHg").tag("inHg")
                 }
+            }
+
+            // MARK: NOTAM credentials
+            Section {
+                LabeledContent("Client ID") {
+                    TextField("", text: $faaClientId, prompt: Text("paste your client_id"))
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                }
+                LabeledContent("Client Secret") {
+                    SecureField("", text: $faaClientSecret, prompt: Text("paste your client_secret"))
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                }
+                HStack {
+                    Spacer()
+                    Button("Open FAA developer portal") {
+                        if let url = URL(string: "https://api.faa.gov") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+            } header: {
+                Text("NOTAMs (FAA API)")
+            } footer: {
+                Text("Tally fetches NOTAMs from the FAA NOTAM Search API. The credentials are free — register an app at api.faa.gov, then paste the client_id and client_secret here. Without them the `NOTAM EDDM` calculator command shows an authentication prompt.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             // MARK: Footer
