@@ -44,7 +44,11 @@ enum DayNightCurve {
     /// sun is overhead at this UTC instant).
     static func subsolarPoint(at date: Date = Date()) -> CLLocationCoordinate2D {
         var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC")!
+        // Defensive: TimeZone(identifier: "UTC") effectively never returns
+        // nil, but falling back to secondsFromGMT: 0 keeps us off a
+        // force-unwrap on a path that runs every redraw of the day/night
+        // curve.
+        cal.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? .current
         let comps = cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
         // Manual day-of-year (avoids macOS 15 dependency).
         let dayOfYear = Double(cal.ordinality(of: .day, in: .year, for: date) ?? 1)

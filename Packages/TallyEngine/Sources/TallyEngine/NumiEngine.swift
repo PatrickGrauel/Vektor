@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import os
 
 public struct LineResult: Equatable, Sendable {
     public let line: Int
@@ -108,13 +109,21 @@ public final class NumiEngine {
     /// evaluated on `.onAppear`.
     public static let ratesUpdatedNotification = Notification.Name("tally.engine.ratesUpdated")
 
+    private static let logger = Logger(subsystem: "app.tally.Tally", category: "engine")
+
     public func applyFX(_ snapshot: FXService.Snapshot) {
-        FXBridge.apply(snapshot, to: context)
+        let applied = FXBridge.apply(snapshot, to: context)
+        if applied == 0 && !snapshot.ratesPerUSD.isEmpty {
+            Self.logger.error("applyFX: 0 currencies registered from a \(snapshot.ratesPerUSD.count)-rate snapshot — JS bridge broken?")
+        } else {
+            Self.logger.info("applyFX: \(applied) currencies (base=\(snapshot.base), ts=\(snapshot.timestamp))")
+        }
         NotificationCenter.default.post(name: Self.ratesUpdatedNotification, object: nil)
     }
 
     public func applyCrypto(_ snapshot: CryptoService.Snapshot) {
-        CryptoBridge.apply(snapshot, to: context)
+        let applied = CryptoBridge.apply(snapshot, to: context)
+        Self.logger.info("applyCrypto: \(applied) symbols (ts=\(snapshot.timestamp))")
         NotificationCenter.default.post(name: Self.ratesUpdatedNotification, object: nil)
     }
 
@@ -626,6 +635,96 @@ public final class NumiEngine {
         return endTotal - startTotal
     }
 
+    /// Compute the next expected issuance time for a report, given the
+    /// raw text of the most recent observation/forecast. Used by the
+    /// background refresh job to schedule a re-fetch ~30 s after the
+    /// upstream publisher is expected to push the next report — much
+    /// tighter than blind 5-min polling and easier on the upstream API.
+    ///
+    /// METAR: standard issuance is at HH:50–HH:55 each hour. We pick :55
+    /// + 30 s as the conservative default. If the cached observation
+    /// time is unknown, fall back to "now + 30 min."
+    ///
+    /// ATIS: variable, ~hourly. Schedule one hour after the cached
+    /// observation time + 30 s.
+    ///
+    /// TAF: depends on validity per ICAO Annex 3. < 12 h validity →
+    /// every 3 h. ≥ 12 h validity → every 6 h. Issuance times line up
+    /// with UTC clock (00 / 06 / 12 / 18 for 6 h cadence; 00 / 03 / …
+    /// for 3 h cadence). We compute the next slot strictly after `after`
+    /// and add the 30 s propagation buffer.
+    ///
+    /// Always returns a date strictly in the future relative to the
+    /// `after` argument. The returned cadence is *expected*, not
+    /// guaranteed — upstream sometimes runs late, so consumers should
+    /// also keep a periodic backstop fetch.
+    public static func nextExpectedIssuance(
+        for kind: MetarService.ReportKind,
+        rawCached: String?,
+        after: Date = Date()
+    ) -> Date {
+        let propagationBuffer: TimeInterval = 30
+        let calendar: Calendar = {
+            var c = Calendar(identifier: .gregorian)
+            c.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? .current
+            return c
+        }()
+
+        switch kind {
+        case .metar:
+            // Next :55 strictly after `after`.
+            var comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: after)
+            let currentMinute = comps.minute ?? 0
+            if currentMinute < 55 {
+                comps.minute = 55
+            } else {
+                // Already past :55 this hour — advance to next hour.
+                comps.minute = 55
+                if let bumped = calendar.date(byAdding: .hour, value: 1, to: calendar.date(from: comps) ?? after) {
+                    comps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: bumped)
+                    comps.minute = 55
+                }
+            }
+            comps.second = 0
+            let base = calendar.date(from: comps) ?? after.addingTimeInterval(60)
+            return base.addingTimeInterval(propagationBuffer)
+
+        case .atis:
+            // ATIS letters tick roughly hourly with no fixed slot. Use
+            // observation time + 60 min if available, else `after + 60 min`.
+            let anchor: Date
+            if let raw = rawCached, let obs = observationTime(in: raw) {
+                anchor = obs.addingTimeInterval(60 * 60)
+            } else {
+                anchor = after.addingTimeInterval(60 * 60)
+            }
+            // Don't return a time in the past (e.g. cached obs is very
+            // old) — clamp to at least 30 s in the future.
+            return max(anchor, after.addingTimeInterval(30)).addingTimeInterval(propagationBuffer)
+
+        case .taf:
+            let validityHours = (rawCached.flatMap { tafValidityHours(in: $0) }) ?? 24
+            let cadenceHours = validityHours < 12 ? 3 : 6
+            // Next UTC slot strictly after `after`.
+            var comps = calendar.dateComponents([.year, .month, .day, .hour], from: after)
+            let currentHour = comps.hour ?? 0
+            let nextSlot = ((currentHour / cadenceHours) + 1) * cadenceHours
+            comps.minute = 0
+            comps.second = 0
+            if nextSlot >= 24 {
+                // Rolls into the next UTC day.
+                comps.hour = nextSlot - 24
+                if let bumped = calendar.date(byAdding: .day, value: 1, to: calendar.date(from: comps) ?? after) {
+                    return bumped.addingTimeInterval(propagationBuffer)
+                }
+            } else {
+                comps.hour = nextSlot
+            }
+            let base = calendar.date(from: comps) ?? after.addingTimeInterval(TimeInterval(cadenceHours) * 3600)
+            return base.addingTimeInterval(propagationBuffer)
+        }
+    }
+
     /// Extract the first `DDHHmmZ` Zulu timestamp from a METAR / TAF and
     /// resolve it to a `Date` in UTC. If the day-of-month is in the future
     /// relative to today, assume the report rolled over from last month.
@@ -642,7 +741,10 @@ public final class NumiEngine {
         else { return nil }
 
         var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC")!
+        // Defensive: TimeZone(identifier: "UTC") effectively never returns
+        // nil, but fall back to GMT-0 rather than force-unwrap on a hot
+        // safety-relevant path.
+        cal.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? .current
         let now = Date()
         var comps = cal.dateComponents([.year, .month, .day], from: now)
         let today = comps.day ?? day

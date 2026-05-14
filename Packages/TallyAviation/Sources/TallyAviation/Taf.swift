@@ -210,7 +210,10 @@ public enum TafParser {
     }
 
     private static func calendarDate(day: Int, hour: Int, minute: Int) -> Date? {
-        var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!
+        var c = Calendar(identifier: .gregorian)
+        // Defensive: same pattern as Metar.swift — avoid a force-unwrap
+        // on TimeZone(identifier: "UTC").
+        c.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? .current
         let now = Date()
         var comps = c.dateComponents([.year, .month], from: now)
         comps.day = day; comps.hour = hour; comps.minute = minute; comps.second = 0

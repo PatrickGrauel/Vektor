@@ -1,5 +1,6 @@
 import Foundation
 import TallyAviation
+import os
 
 /// Wrapper around aviationweather.gov (METAR / TAF) and datis.clowd.io (ATIS,
 /// FAA airports only). All sources are free and unauthenticated.
@@ -22,6 +23,9 @@ public actor MetarService {
     /// One shared instance keeps the in-memory state consistent.
     public static let shared = MetarService()
 
+    private static let logger = Logger(subsystem: "app.tally.Tally", category: "metar")
+    private static let requestTimeout: TimeInterval = 15
+
     private let session: URLSession
     private var cache: [String: Entry] = [:]
     private let cacheURL: URL
@@ -31,13 +35,20 @@ public actor MetarService {
     private static let pruneInterval: TimeInterval = 15 * 60
     private var pruningTask: Task<Void, Never>?
 
-    public init(cacheURL: URL? = nil, session: URLSession = .shared) {
+    public init(cacheURL: URL? = nil, session: URLSession? = nil) {
         let fm = FileManager.default
         let dir = (try? fm.url(for: .cachesDirectory, in: .userDomainMask,
                                appropriateFor: nil, create: true))
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         self.cacheURL = cacheURL ?? dir.appendingPathComponent("metar.cache.json")
-        self.session = session
+        if let session {
+            self.session = session
+        } else {
+            let cfg = URLSessionConfiguration.default
+            cfg.timeoutIntervalForRequest = Self.requestTimeout
+            cfg.timeoutIntervalForResource = Self.requestTimeout * 2
+            self.session = URLSession(configuration: cfg)
+        }
         self.cache = Self.loadFromDisk(at: self.cacheURL)
         // Defer pruning + the pruning loop into a Task to stay Swift 6
         // compliant: actor init runs non-isolated, so we can't call
@@ -77,19 +88,22 @@ public actor MetarService {
         let raw: String
         switch kind {
         case .metar:
-            raw = try await fetchRaw(
-                "https://aviationweather.gov/api/data/metar?ids=\(id)&format=raw"
+            raw = try await fetchRawWithRetry(
+                "https://aviationweather.gov/api/data/metar?ids=\(id)&format=raw",
+                kind: kind, id: id
             )
         case .taf:
-            raw = try await fetchRaw(
-                "https://aviationweather.gov/api/data/taf?ids=\(id)&format=raw"
+            raw = try await fetchRawWithRetry(
+                "https://aviationweather.gov/api/data/taf?ids=\(id)&format=raw",
+                kind: kind, id: id
             )
         case .atis:
-            raw = try await fetchAtis(id: id)
+            raw = try await fetchAtisWithRetry(id: id)
         }
         let entry = Entry(stationId: id, kind: kind, raw: raw, fetchedAt: Date())
         cache["\(kind.rawValue.uppercased())|\(id)"] = entry
         saveToDisk()
+        Self.logger.info("\(kind.rawValue) \(id) refreshed (\(raw.count) bytes)")
         return entry
     }
 
@@ -110,9 +124,71 @@ public actor MetarService {
         return String(s.prefix(4))
     }
 
+    // MARK: - Retry-aware fetchers
+
+    private func fetchRawWithRetry(_ urlString: String, kind: ReportKind, id: String) async throws -> String {
+        try await retrying(label: "\(kind.rawValue) \(id)") {
+            try await self.fetchRaw(urlString)
+        }
+    }
+
+    private func fetchAtisWithRetry(id: String) async throws -> String {
+        try await retrying(label: "atis \(id)") {
+            try await self.fetchAtis(id: id)
+        }
+    }
+
+    /// Wraps a fetch closure with 3-attempt exponential backoff. Only
+    /// retries on transient errors (URLError network family, HTTP 5xx).
+    /// Honors `Retry-After` if the body throws `MetarHTTPError(retryAfter:)`.
+    private func retrying<T>(label: String, _ op: () async throws -> T) async throws -> T {
+        let delays: [UInt64] = [0, 2_000_000_000, 6_000_000_000]
+        var lastError: Error?
+        for (attempt, delay) in delays.enumerated() {
+            if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
+            do {
+                return try await op()
+            } catch {
+                lastError = error
+                if isTransient(error) {
+                    Self.logger.warning("\(label) fetch attempt \(attempt + 1) failed (transient): \(error.localizedDescription)")
+                    continue
+                } else {
+                    Self.logger.error("\(label) fetch failed (non-retryable): \(error.localizedDescription)")
+                    throw error
+                }
+            }
+        }
+        let err = lastError ?? URLError(.unknown)
+        Self.logger.error("\(label) fetch exhausted retries: \(err.localizedDescription)")
+        throw err
+    }
+
+    private func isTransient(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .networkConnectionLost, .notConnectedToInternet,
+                 .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+                 .resourceUnavailable:
+                return true
+            default:
+                return false
+            }
+        }
+        if let httpError = error as? MetarHTTPError {
+            return (500...599).contains(httpError.status)
+        }
+        return false
+    }
+
+    struct MetarHTTPError: Error { let status: Int }
+
     private func fetchRaw(_ urlString: String) async throws -> String {
         guard let url = URL(string: urlString) else { throw URLError(.badURL) }
-        let (data, _) = try await session.data(from: url)
+        let (data, response) = try await session.data(from: url)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw MetarHTTPError(status: http.statusCode)
+        }
         return String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
@@ -122,8 +198,15 @@ public actor MetarService {
     /// airports: ATIS is safety-relevant, the pilot must consult the real
     /// broadcast.
     private func fetchAtis(id: String) async throws -> String {
-        guard let url = URL(string: "https://datis.clowd.io/api/\(id)") else { return "" }
-        let (data, _) = try await session.data(from: url)
+        guard let url = URL(string: "https://datis.clowd.io/api/\(id)") else { throw URLError(.badURL) }
+        let (data, response) = try await session.data(from: url)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw MetarHTTPError(status: http.statusCode)
+        }
+        // datis.clowd.io returns either a JSON array (success) or a string
+        // body for unsupported stations. Treat the latter as a graceful
+        // "no ATIS available" rather than a thrown error — pilots see the
+        // explanatory message in the UI and don't need a retry storm.
         guard let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             return "ATIS unavailable for \(id) (datis.clowd.io covers FAA airports only). Consult the airport's actual ATIS frequency."
         }
@@ -180,14 +263,23 @@ public actor MetarService {
     }
 
     private static func loadFromDisk(at url: URL) -> [String: Entry] {
-        guard let data = try? Data(contentsOf: url),
-              let dict = try? JSONDecoder().decode([String: Entry].self, from: data)
-        else { return [:] }
-        return dict
+        do {
+            let data = try Data(contentsOf: url)
+            return try JSONDecoder().decode([String: Entry].self, from: data)
+        } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
+            return [:]   // expected on first launch
+        } catch {
+            logger.warning("metar disk cache unreadable, starting empty: \(error.localizedDescription)")
+            return [:]
+        }
     }
 
     private func saveToDisk() {
-        guard let data = try? JSONEncoder().encode(cache) else { return }
-        try? data.write(to: cacheURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(cache)
+            try data.write(to: cacheURL, options: .atomic)
+        } catch {
+            Self.logger.warning("metar disk cache write failed: \(error.localizedDescription)")
+        }
     }
 }

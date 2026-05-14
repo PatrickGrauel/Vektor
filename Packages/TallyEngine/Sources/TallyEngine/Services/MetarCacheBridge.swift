@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Synchronous-friendly wrapper around `MetarService` so the calculator
 /// engine can answer `METAR EDDM` / `TAF EDDM` lines without awaiting.
@@ -54,6 +55,15 @@ public final class MetarCacheBridge {
 
     private var evictionTask: Task<Void, Never>?
 
+    /// Tracks in-flight prefetch Tasks per key. Prevents a second prefetch
+    /// from spawning while the first is still in flight (the per-key
+    /// cooldown handles repeated calls *after* completion, but doesn't
+    /// stop racing during the network roundtrip). Also gives us a clean
+    /// cancellation hook on teardown.
+    private var inFlight: [String: Task<Void, Never>] = [:]
+
+    private static let logger = Logger(subsystem: "app.tally.Tally", category: "metar-cache-bridge")
+
     init(service: MetarService = .shared) {
         self.service = service
         startEvictionLoop()
@@ -61,6 +71,7 @@ public final class MetarCacheBridge {
 
     deinit {
         evictionTask?.cancel()
+        for (_, task) in inFlight { task.cancel() }
     }
 
     public func cached(kind: MetarService.ReportKind, icao: String) -> Entry? {
@@ -109,8 +120,16 @@ public final class MetarCacheBridge {
         }
         lastAttempt[key] = now
 
+        // Skip if a prefetch is already in flight for this key. Without
+        // this guard, two rapid evaluate cycles can both pass the
+        // cooldown check (the cooldown updates BEFORE the network
+        // roundtrip starts) and race each other.
+        if let existing = inFlight[key], !existing.isCancelled {
+            return
+        }
+
         let service = self.service
-        Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self else { return }
             let serviceEntry: MetarService.Entry?
             switch kind {
@@ -118,6 +137,10 @@ public final class MetarCacheBridge {
             case .taf:   serviceEntry = await service.taf(for: id)
             case .atis:  serviceEntry = await service.atis(for: id)
             }
+            // Always clear the in-flight slot, even on cancellation /
+            // empty response — leaving a stale entry would block future
+            // prefetches forever.
+            await MainActor.run { self.inFlight[key] = nil }
             guard let s = serviceEntry, !s.raw.isEmpty else { return }
             let entry = Entry(kind: kind, raw: s.raw, fetchedAt: s.fetchedAt)
             await MainActor.run {
@@ -126,6 +149,7 @@ public final class MetarCacheBridge {
                 NotificationCenter.default.post(name: Self.notificationName, object: nil)
             }
         }
+        inFlight[key] = task
     }
 
     /// Stations the background refresh job should warm: anything used

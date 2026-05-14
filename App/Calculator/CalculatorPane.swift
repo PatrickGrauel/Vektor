@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import TallyEngine
+import os
 
 struct CalculatorPane: View {
     let engine: NumiEngine?
@@ -211,7 +212,53 @@ struct CalculatorPane: View {
 
     private func evaluate() {
         guard let engine else { return }
-        results = engine.evaluate(documents.selected.content)
+        let newResults = engine.evaluate(documents.selected.content)
+        results = newResults
+        Self.logIdentityUnitRegressions(in: documents.selected.content, results: newResults)
+    }
+
+    /// Diagnostic: detect when a currency-to-currency conversion produces
+    /// the same value+unit as its input (e.g. `25 EUR in USD = 25 USD`).
+    /// That's the signature of the FX bridge silently failing to register
+    /// the source/target currency — exactly the regression the user
+    /// reported. Logging it here means the next time it happens we can
+    /// pull the FX state out of `log show` instead of guessing.
+    private static let identityLogger = Logger(subsystem: "app.tally.Tally", category: "calculator-diag")
+    private static let identityConversionRegex: NSRegularExpression? = {
+        try? NSRegularExpression(
+            pattern: #"^\s*([\d.,]+)\s*([A-Za-z]{3,4})\s+(?:in|to)\s+([A-Za-z]{3,4})\s*$"#
+        )
+    }()
+
+    private static func logIdentityUnitRegressions(in source: String, results: [LineResult]) {
+        guard let regex = identityConversionRegex else { return }
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        for r in results where r.kind == .expression {
+            guard r.line < lines.count else { continue }
+            let raw = lines[r.line]
+            let ns = raw as NSString
+            guard let m = regex.firstMatch(in: raw, range: NSRange(location: 0, length: ns.length)),
+                  m.numberOfRanges == 4
+            else { continue }
+            let srcCur = ns.substring(with: m.range(at: 2)).uppercased()
+            let dstCur = ns.substring(with: m.range(at: 3)).uppercased()
+            // We only care about CURRENCY → DIFFERENT-CURRENCY conversions.
+            // Same-currency conversions ("1 EUR in EUR") legitimately stay
+            // 1:1 and aren't a bug.
+            guard srcCur != dstCur else { continue }
+            guard let value = r.value else { continue }
+            // Look at the unit suffix in the result. The result format is
+            // "<number> <UNIT>" with the unit upper-cased; "25 USD" / "20.5 USD"
+            // / "1.05e+04 USD" etc. Lift the trailing token.
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            guard let unitStart = trimmed.lastIndex(of: " ") else { continue }
+            let unit = String(trimmed[trimmed.index(after: unitStart)...]).uppercased()
+            // If the result unit equals the SOURCE unit (not the requested
+            // target), the conversion silently no-op'd — that's the bug.
+            if unit == srcCur && unit != dstCur {
+                identityLogger.error("identity-conversion regression: \(raw) → \(value) (FX bridge may have failed to register \(dstCur))")
+            }
+        }
     }
 }
 

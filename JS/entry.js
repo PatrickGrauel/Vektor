@@ -83,6 +83,15 @@ globalThis.tally = {
     // propagate Infinity through every downstream conversion.
     if (!isFinite(ratePerUSD) || ratePerUSD <= 0) return;
     const upper = String(code).toUpperCase();
+    // Never re-register USD via setCurrency — USD is the base, set up
+    // by initBaseCurrencies(). math.js's `override: true` path deletes
+    // a unit before recreating it, so `createUnit('USD', '1 USD',
+    // { override: true })` deletes USD, then fails to recreate it
+    // (definition references the now-deleted USD), leaving the unit
+    // table broken and every downstream rate (EUR / GBP / …) silently
+    // unresolvable. Frankfurter's snapshot adds `USD: 1` for symmetry —
+    // we just skip it.
+    if (upper === "USD") return;
     const lower = upper.toLowerCase();
     // math.js's createUnit accepts override via the THIRD argument
     // (`(name, definition, options)`). Passing

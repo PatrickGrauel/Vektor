@@ -1,6 +1,7 @@
 import Foundation
 import JavaScriptCore
 import TallyAviation
+import os
 
 /// Registers aviation-flavoured functions inside math.js so they can be
 /// called from calculator expressions:
@@ -14,6 +15,7 @@ import TallyAviation
 ///   ete(180, 120)                          // distance, ground speed → hours
 ///   tod(10000, 500, 120)                   // alt to lose ft, descent rate fpm, GS → distance
 public enum AviationBridge {
+    private static let logger = Logger(subsystem: "app.tally.Tally", category: "aviation-bridge")
 
     public static func register(on context: JSContext) {
         // Stage 1: Park Swift closures on a temp JS global.
@@ -46,7 +48,15 @@ public enum AviationBridge {
             Fuel.enduranceHours(fuelQty: fuel, burnRate: burn)
         }
 
-        let bridge = JSValue(newObjectIn: context)!
+        guard let bridge = JSValue(newObjectIn: context) else {
+            // `JSValue(newObjectIn:)` only returns nil if the context is
+            // already in an error state (e.g. JS engine failed to start).
+            // Bail out cleanly rather than crash — calculator math still
+            // works without aviation functions, only e6b/density_altitude/
+            // crosswind/etc. fail to register.
+            logger.error("register: JSContext rejected new object; aviation bridge not installed")
+            return
+        }
         bridge.setValue(densityAltitude, forProperty: "density_altitude")
         bridge.setValue(pressureAltitude, forProperty: "pressure_altitude")
         bridge.setValue(isaTemp,           forProperty: "isa_temp")

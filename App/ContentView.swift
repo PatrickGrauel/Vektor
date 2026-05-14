@@ -1,5 +1,6 @@
 import SwiftUI
 import TallyEngine
+import os
 
 enum Pane: String, CaseIterable, Identifiable {
     case calculator   = "Calculator"
@@ -65,6 +66,8 @@ final class AppModel: ObservableObject {
     @Published var fxSourceLabel: String = "Not configured"
     @Published var fxIsOffline: Bool = false
 
+    private static let logger = Logger(subsystem: "app.tally.Tally", category: "app-model")
+
     private let fx = FXService()
     private let crypto = CryptoService()
     /// Per-kind staleness thresholds for the background refresh job. METARs
@@ -75,6 +78,9 @@ final class AppModel: ObservableObject {
     private static let atisRefreshAfter:  TimeInterval = 60 * 60
     private static let refreshJobInterval: TimeInterval = 5 * 60
     private var metarRefreshTask: Task<Void, Never>?
+    private var fxStreamTask: Task<Void, Never>?
+    private var cryptoStreamTask: Task<Void, Never>?
+    private var reachabilityObserver: NSObjectProtocol?
 
     init() {
         do {
@@ -82,60 +88,135 @@ final class AppModel: ObservableObject {
         } catch {
             self.engineError = error.localizedDescription
         }
+        // Touch the singleton to start NWPathMonitor on launch even if
+        // bootstrapLiveData is delayed (e.g. SwiftUI .task latency).
+        _ = Reachability.shared
+        // On reconnect: kick a fresh FX/crypto fetch + refresh active
+        // METAR/TAF/ATIS stations. This is what closes the 5-min worst-
+        // case stall after coming back online.
+        reachabilityObserver = NotificationCenter.default.addObserver(
+            forName: Reachability.reconnectedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Self.logger.info("reachability: reconnected — kicking refresh")
+            Task { @MainActor in
+                self.refreshActiveStations()
+            }
+            // FX/Crypto streams' polling tasks pick up on the next tick
+            // automatically; nothing more to do here for them — they
+            // already use the same shared session that just regained
+            // connectivity.
+        }
     }
 
     deinit {
         metarRefreshTask?.cancel()
+        fxStreamTask?.cancel()
+        cryptoStreamTask?.cancel()
+        if let reachabilityObserver {
+            NotificationCenter.default.removeObserver(reachabilityObserver)
+        }
     }
 
     func bootstrapLiveData() async {
+        // Pick an FX source. OpenExchangeRates if the user has a key,
+        // Frankfurter (free ECB rates) otherwise.
         let oxrKey = UserDefaults.standard.string(forKey: "tally.fx.openExchangeRatesKey") ?? ""
+        let source: FXService.Source
         if !oxrKey.isEmpty {
             fxSourceLabel = "OpenExchangeRates"
-            if let snap = await fx.snapshot(using: .openExchangeRates(appId: oxrKey)) {
-                engine?.applyFX(snap)
-                fxSnapshotDate = snap.timestamp
-                fxCurrencyCount = snap.ratesPerUSD.count
-                fxIsOffline = false
-            } else {
-                fxIsOffline = true
-            }
+            source = .openExchangeRates(appId: oxrKey)
         } else {
-            // No OXR key — fall back to Frankfurter (free ECB rates, ~30 majors
-            // including HUF, CZK, PLN). Real-time enough for a calculator app.
             fxSourceLabel = "Frankfurter (ECB)"
-            if let snap = await fx.snapshot(using: .frankfurter) {
-                engine?.applyFX(snap)
-                fxSnapshotDate = snap.timestamp
-                fxCurrencyCount = snap.ratesPerUSD.count
-                fxIsOffline = false
-            } else {
-                fxIsOffline = true
+            source = .frankfurter
+        }
+
+        // Subscribe to the FX stream. The stream yields the cached
+        // snapshot first (if any), then yields again after every
+        // successful background refresh — fixes the bug where the engine
+        // was stuck on whatever rates landed at launch even after the
+        // cache was successfully refreshed in the background.
+        fxStreamTask?.cancel()
+        fxStreamTask = Task { [weak self] in
+            guard let self else { return }
+            for await snap in await self.fx.snapshots(using: source) {
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    self.engine?.applyFX(snap)
+                    self.fxSnapshotDate = snap.timestamp
+                    self.fxCurrencyCount = snap.ratesPerUSD.count
+                    self.fxIsOffline = false
+                    Self.logger.info("FX stream → engine: \(snap.ratesPerUSD.count) rates, ts=\(snap.timestamp)")
+                }
             }
         }
-        if let cryptoSnap = await crypto.snapshot() {
-            engine?.applyCrypto(cryptoSnap)
+
+        // Crypto: same stream pattern as FX so any successful background
+        // refresh re-applies prices into the engine.
+        cryptoStreamTask?.cancel()
+        cryptoStreamTask = Task { [weak self] in
+            guard let self else { return }
+            for await snap in await self.crypto.snapshots() {
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    self.engine?.applyCrypto(snap)
+                    Self.logger.info("crypto stream → engine: \(snap.pricesUSD.count) symbols, ts=\(snap.timestamp)")
+                }
+            }
         }
+
         startMetarRefreshJob()
     }
 
     /// Background job that proactively warms METAR/TAF/ATIS for stations
-    /// the user has recently referenced (in the open document or the
-    /// Aviation pane). Runs every 5 minutes; each prefetch is deduped by
-    /// the bridge's own cooldown, so racing with the Aviation pane's own
-    /// refresh timer is harmless.
+    /// the user has recently referenced.
+    ///
+    /// Strategy: compute the next expected issuance time across all
+    /// active stations using `NumiEngine.nextExpectedIssuance(…)` — for
+    /// METAR that's the next :55 of the hour, for TAF the next 0/6/12/18
+    /// UTC slot, for ATIS roughly one hour after the cached observation
+    /// — sleep until then, refresh, repeat. This is dramatically tighter
+    /// than blind 5-min polling and is also gentler on the upstream API.
+    ///
+    /// A 5-min ticker remains as a backstop in case the precise-schedule
+    /// task is cancelled (sleep/wake on a laptop) or upstream runs late.
     private func startMetarRefreshJob() {
         metarRefreshTask?.cancel()
         metarRefreshTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(AppModel.refreshJobInterval * 1_000_000_000))
                 guard let self else { return }
+
+                // Schedule-on-issuance leg: sleep until the earliest
+                // expected issuance across active stations. If nothing
+                // is active, fall back to the backstop interval.
+                let now = Date()
+                let stations = MetarCacheBridge.shared.activeStations()
+                let target: Date = {
+                    var earliest: Date = now.addingTimeInterval(AppModel.refreshJobInterval)
+                    for (kind, icao) in stations {
+                        let cachedRaw = MetarCacheBridge.shared.cached(kind: kind, icao: icao)?.raw
+                        let next = NumiEngine.nextExpectedIssuance(for: kind, rawCached: cachedRaw, after: now)
+                        if next < earliest { earliest = next }
+                    }
+                    // Never sleep less than 30 s — guards against a
+                    // tight loop if a station's expected issuance is in
+                    // the very near past (clock skew).
+                    return max(earliest, now.addingTimeInterval(30))
+                }()
+
+                let sleepInterval = target.timeIntervalSince(Date())
+                if sleepInterval > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(sleepInterval * 1_000_000_000))
+                }
+                if Task.isCancelled { return }
                 self.refreshActiveStations()
             }
         }
     }
 
-    private func refreshActiveStations() {
+    func refreshActiveStations() {
         let bridge = MetarCacheBridge.shared
         let now = Date()
         for (kind, icao) in bridge.activeStations() {

@@ -183,7 +183,10 @@ public enum MetarParser {
               let hour = Int(body.dropFirst(2).prefix(2)),
               let min = Int(body.dropFirst(4)) else { return nil }
         var c = Calendar(identifier: .gregorian)
-        c.timeZone = TimeZone(identifier: "UTC")!
+        // Defensive: `TimeZone(identifier: "UTC")` never returns nil on
+        // any supported platform, but falling back to `secondsFromGMT: 0`
+        // keeps the parser off a force-unwrap.
+        c.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? .current
         let now = Date()
         var comps = c.dateComponents([.year, .month], from: now)
         comps.day = day; comps.hour = hour; comps.minute = min; comps.second = 0

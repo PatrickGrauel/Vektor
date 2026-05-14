@@ -173,7 +173,10 @@ enum RealEstateMath {
             if p.holdYears == 0 { break }
         }
 
-        // 3. Headline metrics derived from year-1
+        // 3. Headline metrics derived from year-1.
+        // `year.first!` is safe: the loop above iterates over
+        // `1...max(p.holdYears, 1)`, which guarantees at least one
+        // iteration and one appended `YearProjection`.
         let y1 = year.first!
         let capRate = p.purchasePrice > 0 ? y1.noi / p.purchasePrice * 100 : 0
         let coc     = cashInvested > 0 ? y1.cashFlow / cashInvested * 100 : 0
@@ -184,7 +187,8 @@ enum RealEstateMath {
             ? y1.operatingExpenses / y1.effectiveGrossIncome * 100
             : 0
 
-        // 4. Exit math
+        // 4. Exit math. Same invariant as above — `year` is non-empty
+        // because the loop runs at least once.
         let last = year.last!
         let saleValue = last.propertyValue
         let sellingCosts = saleValue * (p.sellingCostsPercent / 100)
