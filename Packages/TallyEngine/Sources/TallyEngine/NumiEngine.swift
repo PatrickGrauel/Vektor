@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import TallyAviation
 import os
 
 public struct LineResult: Equatable, Sendable {
@@ -170,6 +171,11 @@ public final class NumiEngine {
             if let wx = handleMetarLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: wx.value, kind: .expression,
                                      annotation: wx.annotation))
+                continue
+            }
+
+            if let runways = Self.handleRunwayLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: runways, kind: .expression))
                 continue
             }
 
@@ -559,6 +565,67 @@ public final class NumiEngine {
             label = "\(icaos.count) stations · oldest \(Self.formatAge(ages.max() ?? 0))"
         }
         return MetarLine(value: value, annotation: LineResult.Annotation(label: label, tone: worstTone))
+    }
+
+    // MARK: - Runway lookup
+
+    /// Recognise `RWY EDMA` / `RUNWAY EDMA` / `RUNWAYS EDDM EDMA …`
+    /// lines and return a formatted multi-line runway listing for each
+    /// station from the bundled OurAirports database. Magnetic
+    /// designators (from the runway *names*) plus true headings are
+    /// shown alongside length × width and surface.
+    ///
+    /// Returns `nil` if the line doesn't match the runway pattern.
+    static func handleRunwayLine(_ line: String) -> String? {
+        // Match the same multi-ICAO shape as METAR/TAF.
+        let pattern = #"^(RWY|RWYS|RUNWAY|RUNWAYS)\s+([A-Z]{3,4}(?:\s+[A-Z]{3,4})*)$"#
+        guard line.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil else {
+            return nil
+        }
+        let tokens = line.split(separator: " ", omittingEmptySubsequences: true).map { String($0).uppercased() }
+        guard tokens.count >= 2 else { return nil }
+        let icaos = Array(tokens.dropFirst())
+        let db = RunwayDatabase.shared
+
+        var sections: [String] = []
+        for icao in icaos {
+            // Canonicalise 3-letter IATA to ICAO so RWY JFK works.
+            let canonical = AirportCodeMap.canonicalICAO(from: icao) ?? icao
+            let runways = db.runways(forICAO: canonical)
+            if runways.isEmpty {
+                sections.append("\(canonical): no runway data")
+                continue
+            }
+            // Header line: airport code + count
+            sections.append("\(canonical) — \(runways.count) runway\(runways.count == 1 ? "" : "s")")
+            for r in runways {
+                sections.append("  " + Self.formatRunway(r))
+            }
+        }
+        return sections.joined(separator: "\n")
+    }
+
+    private static func formatRunway(_ r: RunwayInfo) -> String {
+        let pair = "\(r.leIdent)/\(r.heIdent)"
+        let dims: String = {
+            if let m = r.lengthMeters, let w = r.widthMeters {
+                return "\(m)×\(w) m"
+            } else if let m = r.lengthMeters {
+                return "\(m) m"
+            }
+            return "—"
+        }()
+        let headings = String(format: "%03.0f°/%03.0f° T", r.leHeadingTrue, r.heHeadingTrue)
+        let surface = (r.surface?.isEmpty == false) ? r.surface! : "—"
+        let suffix: String
+        if r.closed {
+            suffix = "  (closed)"
+        } else if !r.lighted {
+            suffix = "  (unlit)"
+        } else {
+            suffix = ""
+        }
+        return "\(pair)  \(dims)  \(surface)  \(headings)\(suffix)"
     }
 
     private static func formatAge(_ seconds: Int) -> String {
