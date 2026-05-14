@@ -179,6 +179,16 @@ public final class NumiEngine {
                 continue
             }
 
+            if let dist = Self.handleDistanceLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: dist, kind: .expression))
+                continue
+            }
+
+            if let sun = Self.handleSunLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: sun, kind: .expression))
+                continue
+            }
+
             let prep = preprocessor.transform(raw, previousValues: previousValues)
             if prep.isLabelOnly {
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .label))
@@ -654,6 +664,125 @@ public final class NumiEngine {
             cross = "Xw \(a.crosswindKt)"
         }
         return "expect RWY \(a.designator) · \(head) · \(cross)"
+    }
+
+    // MARK: - Sun events
+
+    /// Recognise `sun EDDM` and return SR / SS / civil-twilight-end
+    /// for today at that airport. Returns nil if the line doesn't match.
+    ///
+    /// Multi-ICAO is supported: `sun EDDM EDMA EDMO` returns one line
+    /// per airport so the pilot can compare daylight windows along a
+    /// route.
+    static func handleSunLine(_ line: String) -> String? {
+        let pattern = #"^sun\s+([A-Z]{3,4}(?:\s+[A-Z]{3,4})*)$"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              re.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) != nil
+        else { return nil }
+        let tokens = line.split(separator: " ", omittingEmptySubsequences: true).map { String($0).uppercased() }
+        let icaos = Array(tokens.dropFirst())
+        guard !icaos.isEmpty else { return nil }
+
+        // Local timezone for displaying alongside Zulu. Tally doesn't
+        // resolve the airport's local timezone from coordinates (that
+        // would need a tzlite dataset) — instead we use the device's
+        // local timezone for the "local" column. Pilots planning at
+        // home for a flight to a far station will see the wrong
+        // local; document this rather than fudge it.
+        let localTZ = TimeZone.current
+        let zuluFmt = DateFormatter()
+        zuluFmt.dateFormat = "HHmm'Z'"
+        zuluFmt.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0) ?? .current
+        zuluFmt.locale = Locale(identifier: "en_US_POSIX")
+        let localFmt = DateFormatter()
+        localFmt.dateFormat = "HH:mm"
+        localFmt.timeZone = localTZ
+        localFmt.locale = Locale(identifier: "en_US_POSIX")
+
+        let db = RunwayDatabase.shared
+        var lines: [String] = []
+        for icao in icaos {
+            let canon = AirportCodeMap.canonicalICAO(from: icao) ?? icao
+            guard let c = db.coordinate(forICAO: canon) else {
+                lines.append("\(canon): no coordinates")
+                continue
+            }
+            let ev = SolarEvents.events(latitude: c.latitude, longitude: c.longitude)
+            let sr = formatPair(ev.sunrise, zuluFmt, localFmt)
+            let ss = formatPair(ev.sunset, zuluFmt, localFmt)
+            let ce = formatPair(ev.civilTwilightEnd, zuluFmt, localFmt)
+            // Prefix with the ICAO when multiple are requested so the
+            // user can tell them apart.
+            let prefix = icaos.count > 1 ? "\(canon)  " : ""
+            lines.append("\(prefix)SR \(sr) · SS \(ss) · CT-end \(ce)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func formatPair(_ date: Date?,
+                                   _ zuluFmt: DateFormatter,
+                                   _ localFmt: DateFormatter) -> String {
+        guard let date else { return "—" }
+        return "\(zuluFmt.string(from: date)) (\(localFmt.string(from: date)))"
+    }
+
+    // MARK: - Distance + bearing
+
+    /// Recognise `distance EDDM to EDMA` (also `dist`, also `→` arrow,
+    /// and an optional `in km|mi|nm` suffix) and return a formatted
+    /// great-circle distance plus initial true bearing. Returns nil if
+    /// the line doesn't match.
+    ///
+    /// Default unit is NM (aviation standard). The line carries the
+    /// bearing too so the pilot can dial it into a heading bug.
+    static func handleDistanceLine(_ line: String) -> String? {
+        let pattern = #"^(?:distance|dist)\s+([A-Z]{3,4})\s+(?:to|→)\s+([A-Z]{3,4})(?:\s+in\s+([A-Za-z]+))?$"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let m = re.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length))
+        else { return nil }
+        let ns = line as NSString
+        let from = ns.substring(with: m.range(at: 1)).uppercased()
+        let to   = ns.substring(with: m.range(at: 2)).uppercased()
+        let unitToken: String? = {
+            let r = m.range(at: 3)
+            return r.location == NSNotFound ? nil : ns.substring(with: r).lowercased()
+        }()
+
+        let canonFrom = AirportCodeMap.canonicalICAO(from: from) ?? from
+        let canonTo   = AirportCodeMap.canonicalICAO(from: to)   ?? to
+        let db = RunwayDatabase.shared
+        guard let a = db.coordinate(forICAO: canonFrom) else {
+            return "no coordinates for \(canonFrom)"
+        }
+        guard let b = db.coordinate(forICAO: canonTo) else {
+            return "no coordinates for \(canonTo)"
+        }
+        let bearing = GreatCircle.initialBearingTrue(
+            lat1: a.latitude, lon1: a.longitude,
+            lat2: b.latitude, lon2: b.longitude
+        )
+        let distanceFormatted: String
+        switch unitToken {
+        case "km":
+            let km = GreatCircle.distanceKM(lat1: a.latitude, lon1: a.longitude,
+                                            lat2: b.latitude, lon2: b.longitude)
+            distanceFormatted = String(format: "%.0f km", km)
+        case "mi", "mile", "miles":
+            let mi = GreatCircle.distanceMiles(lat1: a.latitude, lon1: a.longitude,
+                                               lat2: b.latitude, lon2: b.longitude)
+            distanceFormatted = String(format: "%.0f mi", mi)
+        case nil, "nm", "nmi", "nauticalmiles":
+            let nm = GreatCircle.distanceNM(lat1: a.latitude, lon1: a.longitude,
+                                            lat2: b.latitude, lon2: b.longitude)
+            distanceFormatted = String(format: "%.0f NM", nm)
+        default:
+            // Unknown unit — fall back to NM and tag the unit token so
+            // the user notices.
+            let nm = GreatCircle.distanceNM(lat1: a.latitude, lon1: a.longitude,
+                                            lat2: b.latitude, lon2: b.longitude)
+            distanceFormatted = String(format: "%.0f NM (unknown unit '\(unitToken ?? "")')", nm)
+        }
+        return String(format: "%@ · brg %03.0f° T", distanceFormatted, bearing)
     }
 
     private static func formatRunway(_ r: RunwayInfo) -> String {

@@ -63,6 +63,27 @@ public final class RunwayDatabase: @unchecked Sendable {
         return byICAO[icao.uppercased()] ?? []
     }
 
+    /// Approximate airport reference point — the lat/lon of the first
+    /// runway threshold we have for this ICAO. For distance / bearing
+    /// math between airports this is well within 1 NM of the true ARP
+    /// at every airport, which is plenty.
+    ///
+    /// Returns `nil` when the ICAO isn't in OurAirports, or when none
+    /// of its runways carry usable threshold coordinates.
+    public func coordinate(forICAO icao: String) -> (latitude: Double, longitude: Double)? {
+        ensureLoaded()
+        guard let runways = byICAO[icao.uppercased()] else { return nil }
+        for r in runways {
+            if let lat = r.leLatitude, let lon = r.leLongitude {
+                return (lat, lon)
+            }
+            if let lat = r.heLatitude, let lon = r.heLongitude {
+                return (lat, lon)
+            }
+        }
+        return nil
+    }
+
     /// Total number of (airport, runway) rows. Exposed for the
     /// Settings diagnostics line and for tests.
     public var entryCount: Int {
