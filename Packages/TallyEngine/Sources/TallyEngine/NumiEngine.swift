@@ -627,6 +627,8 @@ public final class NumiEngine {
 
     /// Render an `Advice` as the user-facing "expect RWY …" line.
     /// Single-line, dot-separated, with gust components in parens.
+    /// `Hw` = headwind, `Xw` = crosswind, `Tw` = tailwind — the `w`
+    /// suffix means "wind" so the three are visually parallel.
     static func formatRunwayAdvice(_ a: RunwayWindAdvisor.Advice) -> String {
         let head: String
         if a.isTailwind {
@@ -647,9 +649,9 @@ public final class NumiEngine {
         }
         let cross: String
         if let xg = a.crosswindGustKt {
-            cross = "Xc \(a.crosswindKt) (G\(xg))"
+            cross = "Xw \(a.crosswindKt) (G\(xg))"
         } else {
-            cross = "Xc \(a.crosswindKt)"
+            cross = "Xw \(a.crosswindKt)"
         }
         return "expect RWY \(a.designator) · \(head) · \(cross)"
     }

@@ -137,28 +137,61 @@ struct CalculatorPane: View {
         default:
             // Build the attributed string line-by-line so we can colour
             // runway-wind suggestion lines (anything starting with
-            // "expect RWY ") in the accent colour. The rest of the
-            // value renders in the kind's normal colour. Keeps the
-            // engine→renderer coupling minimal — the engine just emits
-            // text, the renderer recognises the marker prefix.
+            // "expect RWY ") in the accent colour, and so we can
+            // highlight high-gust wind groups (G > 20 kt) in red
+            // anywhere they appear in a METAR or TAF.
             let text = display(r)
             let baseColor = color(r)
             var attr = AttributedString("")
             let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
             for (idx, line) in lines.enumerated() {
-                var lineAttr = AttributedString(String(line))
+                let lineStr = String(line)
+                var lineAttr = AttributedString(lineStr)
                 lineAttr.font = .system(.body, design: .monospaced)
-                if line.hasPrefix("expect RWY") {
+                if lineStr.hasPrefix("expect RWY") {
                     lineAttr.foregroundColor = TallyTheme.accent
                 } else {
                     lineAttr.foregroundColor = baseColor
                 }
+                Self.applyHighGustHighlight(to: &lineAttr, lineStr: lineStr)
                 attr += lineAttr
                 if idx < lines.count - 1 {
                     attr += AttributedString("\n")
                 }
             }
             return attr
+        }
+    }
+
+    /// Pattern: an ICAO wind-group gust component like `G25KT`. We mark
+    /// the whole `G\d{2,3}KT` token in red when the gust value is
+    /// strictly above 20 kt. Captured anywhere on the line so it
+    /// triggers in TEMPO / BECMG / PROBxx blocks of TAFs too — pilots
+    /// don't care which group the high gust lives in, only that it's
+    /// forecast.
+    private static let highGustRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"\bG(\d{2,3})KT\b"#)
+    }()
+
+    private static func applyHighGustHighlight(to attr: inout AttributedString, lineStr: String) {
+        guard let regex = Self.highGustRegex else { return }
+        let ns = lineStr as NSString
+        let fullRange = NSRange(location: 0, length: ns.length)
+        var searchStart = attr.startIndex
+        for match in regex.matches(in: lineStr, range: fullRange) {
+            let gustNumRange = match.range(at: 1)
+            guard gustNumRange.location != NSNotFound,
+                  let gust = Int(ns.substring(with: gustNumRange)),
+                  gust > 20
+            else { continue }
+            let token = ns.substring(with: match.range)
+            // Locate the same token inside the AttributedString. Search
+            // from `searchStart` so multiple gust tokens on the same
+            // line each get highlighted independently.
+            if let range = attr[searchStart...].range(of: token) {
+                attr[range].foregroundColor = TallyTheme.statusBad
+                searchStart = range.upperBound
+            }
         }
     }
 

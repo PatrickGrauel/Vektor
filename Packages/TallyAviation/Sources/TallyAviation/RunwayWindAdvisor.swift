@@ -22,13 +22,26 @@ public enum RunwayWindAdvisor {
         public let headwindKt: Int
         public let crosswindKt: Int
         /// Side the crosswind comes from. Lets the renderer show
-        /// "Xc 5L" / "Xc 5R" if you want to.
+        /// "Xw 5L" / "Xw 5R" if you want to.
         public let crosswindFromRight: Bool
         public let isTailwind: Bool
         /// Same components computed against the gust speed. `nil` if
         /// the METAR didn't include a gust value.
         public let headwindGustKt: Int?
         public let crosswindGustKt: Int?
+
+        public init(designator: String,
+                    headwindKt: Int, crosswindKt: Int,
+                    crosswindFromRight: Bool, isTailwind: Bool,
+                    headwindGustKt: Int?, crosswindGustKt: Int?) {
+            self.designator = designator
+            self.headwindKt = headwindKt
+            self.crosswindKt = crosswindKt
+            self.crosswindFromRight = crosswindFromRight
+            self.isTailwind = isTailwind
+            self.headwindGustKt = headwindGustKt
+            self.crosswindGustKt = crosswindGustKt
+        }
     }
 
     /// Compute the best runway recommendation for a METAR's wind

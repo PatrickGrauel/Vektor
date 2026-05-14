@@ -87,6 +87,31 @@ final class RunwayLookupTests: XCTestCase {
         XCTAssertTrue(v.contains("EDDM"))
     }
 
+    // MARK: - Advice formatter
+
+    func test_formatRunwayAdvice_usesXwNotXc() {
+        let advice = RunwayWindAdvisor.Advice(
+            designator: "26L",
+            headwindKt: 14, crosswindKt: 5,
+            crosswindFromRight: true, isTailwind: false,
+            headwindGustKt: 24, crosswindGustKt: 8
+        )
+        let s = NumiEngine.formatRunwayAdvice(advice)
+        XCTAssertEqual(s, "expect RWY 26L · Hw 14 (G24) · Xw 5 (G8)")
+        XCTAssertFalse(s.contains("Xc"), "must use Xw, not Xc")
+    }
+
+    func test_formatRunwayAdvice_tailwindLabel() {
+        let advice = RunwayWindAdvisor.Advice(
+            designator: "09",
+            headwindKt: -4, crosswindKt: 2,
+            crosswindFromRight: false, isTailwind: true,
+            headwindGustKt: nil, crosswindGustKt: nil
+        )
+        let s = NumiEngine.formatRunwayAdvice(advice)
+        XCTAssertEqual(s, "expect RWY 09 · Tw 4 · Xw 2")
+    }
+
     // MARK: - Show the user what EDMA looks like
 
     /// Print the formatted EDMA result. The user asked to verify
