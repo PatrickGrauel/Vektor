@@ -36,35 +36,40 @@ struct TimeStripView: View {
     /// `start + delta` rather than additively shifting on every callback.
     @State private var dragStartCursor: Date? = nil
 
-    /// Width of the leading label column. Kept as a constant so the
-    /// hour header above can use the same offset for its axis — without
-    /// it, the header's hour ticks and cursor line drift to the left of
-    /// the strip below (the header took the full row width, while each
-    /// city's strip lived inside a GeometryReader that started after the
-    /// label column).
+    /// Which row is currently under the mouse. Drives a subtle hover
+    /// background so the user reads the row as interactive (a click
+    /// target / drag handle / both).
+    @State private var hoveringRowID: PinnedCity.ID? = nil
+
+    /// Wall-clock "now" snapshot, refreshed every 60 s so the dotted
+    /// "now" line drifts left as time passes (relative to a stationary
+    /// cursor). Cheap — one Canvas redraw per minute per row.
+    @State private var nowTick: Date = Date()
+    private let nowTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+
     private static let labelColumnWidth: CGFloat = 130
     private static let labelStripGap: CGFloat = 8
     private static let outerPadding: CGFloat = 8
 
+    /// Row height = axis-label band (top) + squares band (bottom).
+    /// Larger than the previous 28pt because each row now carries its
+    /// own local-time axis in addition to the working-hour squares.
+    private static let rowHeight: CGFloat = 46
+    private static let axisBandHeight: CGFloat = 14
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header row: hour ticks aligned to the strip below. The
-            // leading `Color.clear` reserves the same 130 + 8 pt of
-            // space that each city's label column eats below, so the
-            // hour ticks and the cursor line in the header sit in the
-            // identical x-frame as the squares in every row.
-            HStack(spacing: Self.labelStripGap) {
-                Color.clear.frame(width: Self.labelColumnWidth)
-                GeometryReader { geo in
-                    hourHeader(width: geo.size.width)
-                }
-                .frame(height: 22)
-            }
-            .padding(.horizontal, Self.outerPadding)
+            cursorTimeChip
+                .padding(.bottom, 6)
 
             ForEach(cities) { city in
                 cityRow(city: city)
-                    .frame(height: 28)
+                    .frame(height: Self.rowHeight)
+                    .background(
+                        hoveringRowID == city.id
+                            ? TallyTheme.codeSurface.opacity(0.5)
+                            : Color.clear
+                    )
                     .draggable(city.id.uuidString) {
                         Text(city.name)
                             .font(.system(.body, design: .default))
@@ -78,9 +83,69 @@ struct TimeStripView: View {
                     }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .background(TallyTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .onReceive(nowTimer) { nowTick = $0 }
+    }
+
+    /// Cursor's time, the way a meeting-planner user reads it: their own
+    /// local clock plus a "+Xh from now" delta so the proposed moment
+    /// has temporal context. When the cursor is within a minute of the
+    /// real wall-clock, the delta collapses to "now".
+    private var cursorTimeChip: some View {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "EEE HH:mm zzz"
+        fmt.timeZone = TimeZone.current
+        let localText = fmt.string(from: cursor)
+
+        let deltaSec = cursor.timeIntervalSince(nowTick)
+        let delta: String
+        if abs(deltaSec) < 60 {
+            delta = "now"
+        } else {
+            let totalMin = Int(abs(deltaSec) / 60)
+            let h = totalMin / 60
+            let m = totalMin % 60
+            let sign = deltaSec >= 0 ? "+" : "−"
+            delta = h > 0 ? "\(sign)\(h)h\(m > 0 ? " \(m)m" : "")"
+                          : "\(sign)\(m)m"
+        }
+
+        return HStack(spacing: 8) {
+            Text(localText)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(TallyTheme.text)
+            Text("·")
+                .font(.system(.caption))
+                .foregroundStyle(TallyTheme.muted)
+            Text(delta)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(delta == "now" ? TallyTheme.muted : TallyTheme.accent)
+        }
+        .padding(.horizontal, Self.outerPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Sets `NSCursor.openHand` whenever the mouse is over the view
+    /// this is `.background()`-installed on. AppKit's cursor-rect API
+    /// is the right tool — SwiftUI's `.onHover` push/pop pattern leaks
+    /// state when views appear / disappear mid-hover, while
+    /// `addCursorRect` is automatically reset whenever the system
+    /// invalidates cursor rects. Used on the city-row label column so
+    /// the user reads "I can grab this and move it" without us
+    /// adding a grip glyph.
+    private struct DragCursorAffordance: NSViewRepresentable {
+        func makeNSView(context: Context) -> NSView { CursorView() }
+        func updateNSView(_ v: NSView, context: Context) {}
+
+        private final class CursorView: NSView {
+            override func resetCursorRects() {
+                discardCursorRects()
+                addCursorRect(bounds, cursor: .openHand)
+            }
+        }
     }
 
     /// Resolve a drop onto `target` from one or more dragged UUIDs.
@@ -101,69 +166,37 @@ struct TimeStripView: View {
         return true
     }
 
-    // MARK: - Hour header
-
-    private func hourHeader(width: CGFloat) -> some View {
-        Canvas { ctx, size in
-            let cellW = size.width / CGFloat(totalHours)
-            var cal = Calendar(identifier: .gregorian)
-            cal.timeZone = TimeZone.current
-            for i in 0..<totalHours {
-                let date = cal.date(byAdding: .hour, value: i - hoursEachSide, to: cursor) ?? cursor
-                let comp = cal.dateComponents([.hour], from: date)
-                let h = comp.hour ?? 0
-                let x = CGFloat(i) * cellW
-                // Only label every 3 hours to keep the header readable.
-                if h % 3 == 0 {
-                    let text = Text(String(format: "%02d", h))
-                        .font(.caption2)
-                        .foregroundStyle(TallyTheme.muted)
-                    ctx.draw(text, at: CGPoint(x: x + cellW / 2, y: 11))
-                }
-            }
-            // Cursor line on the header too, so the user can see where
-            // they're scrubbing.
-            let cursorX = size.width / 2
-            var line = Path()
-            line.move(to: CGPoint(x: cursorX, y: 0))
-            line.addLine(to: CGPoint(x: cursorX, y: size.height))
-            ctx.stroke(line, with: .color(TallyTheme.accent), lineWidth: 1)
-        }
-        .frame(width: width)
-    }
-
     // MARK: - Per-city row
+    //
+    // Each row is two stacked bands inside one Canvas:
+    //   • axis band (top, ~14pt)   — hour ticks labelled in this city's
+    //                                 local time (the time-translation
+    //                                 hint the user actually reads)
+    //   • squares band (bottom)    — working / acceptable / sleep cells,
+    //                                 with the cursor (solid orange)
+    //                                 and the "now" line (dotted muted)
+    //                                 drawn over the top.
 
     private func cityRow(city: PinnedCity) -> some View {
-        HStack(spacing: 8) {
-            // Left label column
-            VStack(alignment: .leading, spacing: 0) {
-                Text(city.name)
-                    .font(.system(.body, design: .default))
-                    .foregroundStyle(TallyTheme.text)
-                    .lineLimit(1)
-                Text(localTime(for: city, at: cursor))
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(TallyTheme.muted)
-            }
-            .frame(width: 130, alignment: .leading)
+        HStack(spacing: Self.labelStripGap) {
+            cityLabel(city: city)
+                .frame(width: Self.labelColumnWidth, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(DragCursorAffordance())
+                .onHover { hovering in
+                    hoveringRowID = hovering ? city.id : (hoveringRowID == city.id ? nil : hoveringRowID)
+                }
 
-            // Strip
             GeometryReader { geo in
-                cityStrip(city: city, width: geo.size.width)
+                cityCanvas(city: city, width: geo.size.width)
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { drag in
-                                // Click-to-jump (tiny translation) snaps the
-                                // cursor to the hour under the pointer.
-                                // Larger drags scrub continuously from the
-                                // pre-drag cursor position.
                                 if dragStartCursor == nil {
                                     dragStartCursor = cursor
                                 }
                                 let cellW = geo.size.width / CGFloat(totalHours)
                                 if abs(drag.translation.width) < 4 {
-                                    // Treat as a click on the cell at drag.location.x
                                     let cellIndex = Int(drag.location.x / cellW) - hoursEachSide
                                     setCursor(byHours: cellIndex)
                                 } else {
@@ -177,7 +210,19 @@ struct TimeStripView: View {
                     )
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Self.outerPadding)
+    }
+
+    private func cityLabel(city: PinnedCity) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(city.name)
+                .font(.system(.body, design: .default))
+                .foregroundStyle(TallyTheme.text)
+                .lineLimit(1)
+            Text(localTime(for: city, at: cursor))
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(TallyTheme.muted)
+        }
     }
 
     /// Shift `cursor` by `hours` relative to the value at drag-start.
@@ -190,24 +235,72 @@ struct TimeStripView: View {
         }
     }
 
-    private func cityStrip(city: PinnedCity, width: CGFloat) -> some View {
+    private func cityCanvas(city: PinnedCity, width: CGFloat) -> some View {
         Canvas { ctx, size in
             let cellW = size.width / CGFloat(totalHours)
-            var cal = Calendar(identifier: .gregorian)
-            cal.timeZone = TimeZone.current
+            let axisH = Self.axisBandHeight
+            let squaresTop = axisH
+            let squaresH = size.height - axisH
+
+            // The iteration generates evenly-spaced absolute moments
+            // ("hour i from cursor"). The two calendars below interpret
+            // each moment in different time zones: `iterCal` advances by
+            // one absolute hour per step; `cityCal` reads the local
+            // hour for the axis tick label.
+            var iterCal = Calendar(identifier: .gregorian)
+            iterCal.timeZone = TimeZone.current
+            var cityCal = Calendar(identifier: .gregorian)
+            cityCal.timeZone = city.resolvedTimeZone ?? .current
+
+            // ── Axis labels (city-local time) ─────────────────────
+            // Label every 3 hours, anchored at the cell centre. The
+            // hour value comes from cityCal, so a moment that is "21:00
+            // user local" reads as "03:00" in Tokyo, "13:00" in San
+            // Francisco, etc. This is the "what time is it for them?"
+            // answer the user wants when scanning the row.
             for i in 0..<totalHours {
-                let date = cal.date(byAdding: .hour, value: i - hoursEachSide, to: cursor) ?? cursor
+                guard let date = iterCal.date(byAdding: .hour, value: i - hoursEachSide, to: cursor) else { continue }
+                let h = cityCal.dateComponents([.hour], from: date).hour ?? 0
+                guard h % 3 == 0 else { continue }
+                let x = CGFloat(i) * cellW + cellW / 2
+                let text = Text(String(format: "%02d", h))
+                    .font(.caption2)
+                    .foregroundStyle(TallyTheme.muted)
+                ctx.draw(text, at: CGPoint(x: x, y: axisH / 2))
+            }
+
+            // ── Working-hour squares ──────────────────────────────
+            for i in 0..<totalHours {
+                guard let date = iterCal.date(byAdding: .hour, value: i - hoursEachSide, to: cursor) else { continue }
                 let inHours = city.isWorkingHour(date)
                 let asleep = isSleepHour(city: city, at: date)
                 let fill: Color
                 if inHours        { fill = TallyTheme.accent.opacity(0.55) }
                 else if asleep    { fill = TallyTheme.codeSurface.opacity(0.9) }
                 else              { fill = TallyTheme.surface.opacity(0.6) }
-                let rect = CGRect(x: CGFloat(i) * cellW, y: 0,
-                                  width: cellW, height: size.height)
+                let rect = CGRect(x: CGFloat(i) * cellW, y: squaresTop,
+                                  width: cellW, height: squaresH)
                 ctx.fill(Path(rect.insetBy(dx: 0.5, dy: 2)), with: .color(fill))
             }
-            // Cursor line
+
+            // ── "Now" dotted line ─────────────────────────────────
+            // Position relative to the cursor: cursor sits at centre,
+            // so "now" is offset by (now - cursor) hours. Hidden if it
+            // would fall outside the visible window.
+            let nowDeltaH = CGFloat(nowTick.timeIntervalSince(cursor) / 3600)
+            let nowX = size.width / 2 + nowDeltaH * cellW
+            if nowX >= 0 && nowX <= size.width {
+                var dotted = Path()
+                dotted.move(to: CGPoint(x: nowX, y: 0))
+                dotted.addLine(to: CGPoint(x: nowX, y: size.height))
+                ctx.stroke(
+                    dotted,
+                    with: .color(TallyTheme.muted),
+                    style: StrokeStyle(lineWidth: 1, dash: [2, 3])
+                )
+            }
+
+            // ── Cursor line (the proposed moment) ─────────────────
             let cursorX = size.width / 2
             var line = Path()
             line.move(to: CGPoint(x: cursorX, y: 0))
