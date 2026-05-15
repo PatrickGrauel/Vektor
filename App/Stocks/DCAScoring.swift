@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Warren Buffett's "Durable Competitive Advantage" framework, six axes,
 /// each scored 0–10. Sources:
@@ -167,7 +168,41 @@ struct AxisScore: Identifiable {
     /// single-metric axes, where the rationale prose already explains
     /// the score.
     let breakdown: [String]?
+    /// Additional same-units lines plotted on the primary drill-down
+    /// chart. Used for composite axes where every input shares the
+    /// metric's unit (Cost Discipline: SG&A%, R&D%, Dep% are all
+    /// "% of gross profit"). Years and Y-axis scale come from the
+    /// primary trend. nil for simple axes and for composites with
+    /// mixed units (those use `extraCharts` instead).
+    let extraLines: [AxisLine]?
+    /// Additional stacked sub-charts below the primary, for composite
+    /// axes whose inputs are in different units (Balance Sheet:
+    /// D/E ratio plus years-to-pay-down LT debt). Each sub-chart has
+    /// its own series, thresholds, and Y-axis.
+    let extraCharts: [AxisChart]?
     var id: Axis { axis }
+}
+
+/// One additional metric line on a multi-line drill-down chart.
+/// The line shares X-years and Y-units with the primary trend.
+struct AxisLine: Identifiable {
+    let label: String           // "R&D" or "Depreciation"
+    let values: [Double]         // chronological, oldest first
+    let color: Color
+    /// Optional per-metric target (Buffett's own cutoff for THIS line).
+    /// Drawn as a thin dashed horizontal in the line's color so the
+    /// reader sees each line's own benchmark, not just the primary's.
+    let target: Double?
+    var id: String { label }
+}
+
+/// A complete additional drill-down chart stacked below the primary.
+/// Used when a composite axis combines metrics with different units.
+struct AxisChart: Identifiable {
+    let label: String
+    let trend: AxisTrend
+    let thresholds: [AxisThreshold]
+    var id: String { label }
 }
 
 /// One horizontal cutoff drawn on the drill-down chart. The space
@@ -338,7 +373,8 @@ enum DCAScorer {
         return AxisScore(
             axis: .pricingPower, score: scoreClamped,
             headline: headline, rationale: rationale,
-            trend: trend, thresholds: thresholds, breakdown: nil
+            trend: trend, thresholds: thresholds, breakdown: nil,
+            extraLines: nil, extraCharts: nil
         )
     }
 
@@ -412,10 +448,27 @@ enum DCAScorer {
             String(format: "Dep  %.0f%%  →  %@/3", depRatio * 100, formatPts(depPoints)),
             String(format: "Total  →  %@/10", formatPts(final)),
         ]
+        // The honest version of the chart: all three composite inputs
+        // on the same axis, so the user sees which of them is driving
+        // the score — not just SG&A (the headline) while R&D quietly
+        // tanks the verdict (AMZN's failure mode).
+        let rdSeries  = years.map { safeDiv($0.rd, $0.grossProfit) }.reversed()
+        let depSeries = years.map { safeDiv($0.depreciation, $0.grossProfit) }.reversed()
+        let extraLines: [AxisLine] = [
+            AxisLine(label: "R&D",
+                     values: Array(rdSeries),
+                     color: TallyTheme.chartLine2,
+                     target: 0.05),
+            AxisLine(label: "Dep",
+                     values: Array(depSeries),
+                     color: TallyTheme.chartLine3,
+                     target: 0.10),
+        ]
         return AxisScore(
             axis: .costDiscipline, score: final,
             headline: headline, rationale: rationale,
-            trend: trend, thresholds: thresholds, breakdown: breakdown
+            trend: trend, thresholds: thresholds, breakdown: breakdown,
+            extraLines: extraLines, extraCharts: nil
         )
     }
 
@@ -426,7 +479,8 @@ enum DCAScorer {
             return AxisScore(axis: .earningsQuality, score: nil,
                              headline: "N/A — unprofitable in window",
                              rationale: "Net income was zero or negative across the available years; earnings-quality scoring is skipped.",
-                             trend: nil, thresholds: [], breakdown: nil)
+                             trend: nil, thresholds: [], breakdown: nil,
+                             extraLines: nil, extraCharts: nil)
         }
         let netMargin = safeDiv(latest.netIncome, latest.revenue)
         let epsTrend = trendQuality(values: years.map(\.eps).reversed().map { $0 })
@@ -470,7 +524,8 @@ enum DCAScorer {
         return AxisScore(
             axis: .earningsQuality, score: total,
             headline: headline, rationale: rationale,
-            trend: trend, thresholds: thresholds, breakdown: breakdown
+            trend: trend, thresholds: thresholds, breakdown: breakdown,
+            extraLines: nil, extraCharts: nil
         )
     }
 
@@ -481,7 +536,8 @@ enum DCAScorer {
             return AxisScore(axis: .capitalEfficiency, score: nil,
                              headline: "N/A — unprofitable in window",
                              rationale: "ROE is meaningless when earnings are zero or negative; capital-efficiency scoring is skipped.",
-                             trend: nil, thresholds: [], breakdown: nil)
+                             trend: nil, thresholds: [], breakdown: nil,
+                             extraLines: nil, extraCharts: nil)
         }
         // Adjusted equity = equity + |treasury stock|. Buffett's rule:
         // share buybacks don't make a company *less* capital-efficient.
@@ -490,7 +546,8 @@ enum DCAScorer {
             return AxisScore(axis: .capitalEfficiency, score: nil,
                              headline: "N/A — negative or zero adjusted equity",
                              rationale: "Adjusted shareholders' equity is non-positive — likely heavy buybacks beyond cumulative retained earnings. Scoring uses the other axes only.",
-                             trend: nil, thresholds: [], breakdown: nil)
+                             trend: nil, thresholds: [], breakdown: nil,
+                             extraLines: nil, extraCharts: nil)
         }
         let adjROE = latest.netIncome / adjEquity
         let dToE = safeDiv(latest.totalLiabilities, adjEquity)
@@ -534,7 +591,8 @@ enum DCAScorer {
         return AxisScore(
             axis: .capitalEfficiency, score: final,
             headline: headline, rationale: rationale,
-            trend: trend, thresholds: thresholds, breakdown: nil
+            trend: trend, thresholds: thresholds, breakdown: nil,
+            extraLines: nil, extraCharts: nil
         )
     }
 
@@ -611,10 +669,40 @@ enum DCAScorer {
             "LT-debt pay-down \(payText)  →  \(formatPts(payPts))/5",
             String(format: "Total  →  %@/10", formatPts(final)),
         ]
+        // Years-to-pay-down LT debt — second composite input. Mixed
+        // units with D/E, so it goes in its own stacked sub-chart
+        // rather than as a line on the primary D/E chart. We compute
+        // the per-year ratio with that year's own net income (or a
+        // 3-year smoothed denominator when net is volatile).
+        let payDownSeries: [Double] = years.map { y in
+            // Smooth the denominator with the 3-most-recent-year average
+            // to avoid a single bad year producing a spike that doesn't
+            // reflect a real change in leverage cover.
+            let net3 = mean(years.prefix(3).map(\.netIncome)) ?? y.netIncome
+            guard y.longTermDebt > 0, net3 > 0 else { return 0 }
+            return y.longTermDebt / net3
+        }
+        let payDownTrend = AxisTrend(
+            values: payDownSeries.reversed(),
+            years: years.map(\.fiscalYear).reversed(),
+            betterIsHigher: false,
+            format: { String(format: "%.1f yr", $0) }
+        )
+        let payDownThresholds: [AxisThreshold] = [
+            AxisThreshold(value: 3, tier: .strong, label: "≤3 yr — Buffett target"),
+            AxisThreshold(value: 4, tier: .mixed,  label: "≤4 yr"),
+            AxisThreshold(value: 6, tier: .weak,   label: "≤6 yr"),
+        ]
+        let extraCharts: [AxisChart] = [
+            AxisChart(label: "Years to pay down LT debt",
+                      trend: payDownTrend,
+                      thresholds: payDownThresholds),
+        ]
         return AxisScore(
             axis: .balanceSheet, score: final,
             headline: headline, rationale: rationale,
-            trend: trend, thresholds: thresholds, breakdown: breakdown
+            trend: trend, thresholds: thresholds, breakdown: breakdown,
+            extraLines: nil, extraCharts: extraCharts
         )
     }
 
@@ -702,10 +790,33 @@ enum DCAScorer {
             "Retained-earnings CAGR \(reBreakdownText)  →  \(formatPts(rePts))/3",
             String(format: "Total  →  %@/10", formatPts(final)),
         ]
+        // Share count over time — second composite input. Mixed units
+        // with CapEx ratio (absolute count vs %), so stacked sub-chart.
+        // Buffett wants this line trending DOWN (real ongoing buybacks).
+        // No thresholds — the verdict is shape (slope) rather than
+        // crossing a numeric cutoff.
+        let shareSeries = years.map(\.weightedShares).reversed()
+        let shareTrend = AxisTrend(
+            values: Array(shareSeries),
+            years: years.map(\.fiscalYear).reversed(),
+            betterIsHigher: false,
+            format: { v in
+                // Big numbers: shares are usually 100M-15B. Render in
+                // millions for readability, e.g. "4 309M".
+                let millions = v / 1_000_000
+                return String(format: "%.0fM", millions)
+            }
+        )
+        let extraCharts: [AxisChart] = [
+            AxisChart(label: "Weighted shares outstanding",
+                      trend: shareTrend,
+                      thresholds: []),
+        ]
         return AxisScore(
             axis: .capitalAllocation, score: final,
             headline: headline, rationale: rationale,
-            trend: trend, thresholds: thresholds, breakdown: breakdown
+            trend: trend, thresholds: thresholds, breakdown: breakdown,
+            extraLines: nil, extraCharts: extraCharts
         )
     }
 

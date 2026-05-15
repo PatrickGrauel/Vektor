@@ -21,6 +21,23 @@ enum TallyTheme {
     /// Accent (timezone results, active selection). Same in both modes.
     static let accent = Color(red: 0xFF/255, green: 0x9F/255, blue: 0x0F/255)
 
+    /// Secondary chart line — used when a drill-down chart needs to
+    /// plot a second metric alongside the accent-colored primary
+    /// (e.g. R&D% next to SG&A% on Cost Discipline). Cool blue chosen
+    /// to read as "different category" against the warm accent.
+    static let chartLine2 = dyn(
+        dark:  NSColor(red: 0x6F/255, green: 0xB7/255, blue: 0xFF/255, alpha: 1),
+        light: NSColor(red: 0x1E/255, green: 0x6F/255, blue: 0xD4/255, alpha: 1)
+    )
+
+    /// Tertiary chart line — third metric on the same chart
+    /// (e.g. Depreciation% on Cost Discipline). Muted purple so the
+    /// three-way comparison stays legible without becoming a rainbow.
+    static let chartLine3 = dyn(
+        dark:  NSColor(red: 0xB9/255, green: 0x9C/255, blue: 0xFF/255, alpha: 1),
+        light: NSColor(red: 0x6F/255, green: 0x42/255, blue: 0xC1/255, alpha: 1)
+    )
+
     /// Primary text.
     static let text = dyn(
         dark:  NSColor(red: 0xEE/255, green: 0xEE/255, blue: 0xF2/255, alpha: 1),
