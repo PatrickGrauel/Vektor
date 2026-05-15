@@ -285,10 +285,11 @@ struct ContentView: View {
 
     var body: some View {
         paneContent
-            // Let the WindowGroup("Tally") title surface in the title bar
-            // — macOS renders it centered above the toolbar, matching
-            // Numi-style.
-            .navigationTitle("Tally")
+            // Suppress the auto-rendered title text; a principal toolbar
+            // item below draws "Tally" with custom typography so it matches
+            // the SHEET chrome label. The WindowGroup("Tally") name still
+            // surfaces in the Window menu / Dock / app switcher.
+            .navigationTitle("")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(TallyTheme.background.ignoresSafeArea())
             .toolbarBackground(TallyTheme.background, for: .windowToolbar)
@@ -374,6 +375,18 @@ struct ContentView: View {
                     .help("Switch pane — currently \(selection.rawValue)")
                     .accessibilityLabel("Switch pane")
                     .accessibilityValue(selection.rawValue)
+                }
+
+                // Custom-styled "Tally" centered in the toolbar — same
+                // typeface family as the SHEET chrome label (SF Pro,
+                // system default), half-translucent so it reads as quiet
+                // wordmark rather than competing with the active pane.
+                ToolbarItem(placement: .principal) {
+                    Text("Tally")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(TallyTheme.text)
+                        .opacity(0.5)
+                        .accessibilityHidden(true)
                 }
 
                 // Calculator-specific actions sit at the top-right of the
