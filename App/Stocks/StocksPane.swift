@@ -9,6 +9,13 @@ struct StocksPane: View {
     @AppStorage("tally.stocks.lastTicker") private var lastTicker: String = ""
     @AppStorage("tally.stocks.recentTickers") private var recentTickersRaw: String = ""
     @AppStorage("tally.stocks.fmpApiKey") private var apiKey: String = ""
+    // Observe the plan + custom-cap settings so the footer's daily-cap
+    // number reflects the user's current plan in real time. Without
+    // this, changing the plan in the manage popover refreshes that
+    // view's local budget snapshot but leaves the pane's footer state
+    // showing the old (free-tier) cap.
+    @AppStorage(FMPPlan.storageKey) private var planRaw: String = FMPPlan.free.rawValue
+    @AppStorage(FMPPlan.customCapKey) private var customCap: Int = 240
     @StateObject private var monitor = StocksConnectionMonitor.shared
 
     @State private var ticker: String = ""
@@ -89,6 +96,16 @@ struct StocksPane: View {
         .onChange(of: apiKey) { _, new in
             monitor.reflectKeyChange(newKey: new)
             Task { await FMPClient.shared.setAPIKey(new.isEmpty ? nil : new) }
+        }
+        // Plan / custom-cap changes don't fire a network call, but they
+        // do change the effective `callsLimit` reported by FMPClient —
+        // so refresh the footer's budget snapshot to pick up the new
+        // ceiling immediately.
+        .onChange(of: planRaw) { _, _ in
+            Task { await refreshBudget() }
+        }
+        .onChange(of: customCap) { _, _ in
+            Task { await refreshBudget() }
         }
         .onDisappear { task?.cancel() }
     }
