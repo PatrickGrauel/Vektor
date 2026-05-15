@@ -81,6 +81,7 @@ final class DocumentStore: ObservableObject {
             a = 100
             b = 2 * a
             c = a + b
+            // Names are case-insensitive. Total_price and total_price are the same var.
             // Yes, this is the algebra they made you do in school.
             // Turns out it was for something.
 
@@ -91,11 +92,13 @@ final class DocumentStore: ObservableObject {
             // Spoiler: a lot.
 
             # Aviation — for the pilots in the room
-            METAR EDDM         // Munich, live
+            METAR EDDM         // Munich, live — auto-appends best runway by wind
             TAF KSFO           // San Francisco's forecast
             ATIS KJFK          // FAA D-ATIS where published
-            altitude EDDM      // elevation · pressure alt · density alt
-            briefing EDMA      // METAR + TAF + runways + altitude, stacked
+            RWY EDDM           // every runway with length, surface, heading
+            sun EDDM           // sunrise, sunset, civil twilight for today
+            altitude EDDM      // field elevation · pressure alt · density alt
+            briefing EDMA      // …or all of the above for one airport, stacked
             // Type any ICAO code. Multiple at once works too: METAR EDDM EDMO.
 
             // ⌘N for a new scratchpad. ⌘L to see all of them.
