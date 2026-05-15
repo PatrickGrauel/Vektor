@@ -407,12 +407,29 @@ private struct AutocompletingEditor: NSViewRepresentable {
 
         context.coordinator.textView = tv
         context.coordinator.installScrollObserver(on: scroll)
+        // Syntax-highlight `#` headers and `//` comments synchronously
+        // on each keystroke. Wiring via NSTextStorageDelegate runs the
+        // colour pass DURING the storage edit cycle, so the user never
+        // sees a brief flash of default-coloured text before it turns
+        // orange/grey.
+        tv.textStorage?.delegate = context.coordinator
+        if let storage = tv.textStorage {
+            Coordinator.applyLineColors(to: storage)
+        }
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let tv = scroll.documentView as? AutocompletingTextView else { return }
-        if tv.string != text { tv.string = text }
+        if tv.string != text {
+            tv.string = text
+            // Bulk replacement bypasses the per-edit storage delegate
+            // path, so re-apply colours explicitly after a wholesale
+            // text swap (e.g. switching documents).
+            if let storage = tv.textStorage {
+                Coordinator.applyLineColors(to: storage)
+            }
+        }
         applyPerLineSpacing(to: tv)
         tv.recomputeSuggestion()
     }
@@ -449,7 +466,7 @@ private struct AutocompletingEditor: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text, scrollY: $scrollY) }
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         let text: Binding<String>
         let scrollY: Binding<CGFloat>
         weak var textView: AutocompletingTextView?
@@ -495,6 +512,57 @@ private struct AutocompletingEditor: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let tv = notification.object as? AutocompletingTextView else { return }
             tv.recomputeSuggestion()
+        }
+
+        // MARK: - NSTextStorageDelegate (line colouring)
+
+        /// Fired after each storage edit. We re-colour the affected
+        /// paragraph range — local enough to be cheap on every keystroke,
+        /// wide enough to catch multi-line paste / delete.
+        func textStorage(_ textStorage: NSTextStorage,
+                         didProcessEditing editedMask: NSTextStorageEditActions,
+                         range editedRange: NSRange,
+                         changeInLength delta: Int) {
+            // Only re-colour on character edits. Pure attribute edits
+            // (including our own colour additions below) shouldn't
+            // trigger another pass — that would either no-op or loop.
+            guard editedMask.contains(.editedCharacters) else { return }
+            Self.applyLineColors(to: textStorage)
+        }
+
+        /// Apply the line-colour rule across the entire storage:
+        ///   • `#` headers → accent (orange)
+        ///   • `//` comments → muted grey (dynamic for light/dark mode)
+        ///   • everything else → primary text colour
+        ///
+        /// Walks paragraph-by-paragraph and stamps `.foregroundColor`
+        /// on each line range. Cheap enough to run on every keystroke
+        /// for typical Tally documents.
+        static func applyLineColors(to storage: NSTextStorage) {
+            let fullText = storage.string as NSString
+            let total = fullText.length
+            guard total > 0 else { return }
+            let defaultColor = NSColor(TallyTheme.text)
+            let headerColor  = NSColor(TallyTheme.accent)
+            let commentColor = NSColor(TallyTheme.muted)
+            var loc = 0
+            while loc < total {
+                let lineRange = fullText.lineRange(for: NSRange(location: loc, length: 0))
+                let lineString = fullText.substring(with: lineRange)
+                let trimmed = lineString.trimmingCharacters(in: .whitespacesAndNewlines)
+                let colour: NSColor
+                if trimmed.hasPrefix("#") {
+                    colour = headerColor
+                } else if trimmed.hasPrefix("//") {
+                    colour = commentColor
+                } else {
+                    colour = defaultColor
+                }
+                storage.addAttribute(.foregroundColor, value: colour, range: lineRange)
+                let newLoc = lineRange.location + lineRange.length
+                if newLoc == loc { break }
+                loc = newLoc
+            }
         }
     }
 }
