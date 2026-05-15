@@ -65,6 +65,25 @@ enum Pane: String, CaseIterable, Identifiable {
         default:            return ""
         }
     }
+
+    /// Group used to lay the pane out in the chrome pane-picker menu.
+    /// Three buckets matching the user's mental model:
+    /// • general — daily-driver math tools (Calculator, Timezone, Finance)
+    /// • aviation — pilot-specific surfaces (Aviation, METAR Map)
+    /// • investing — long-form analysis (Stocks)
+    var category: Category {
+        switch self {
+        case .calculator, .timezone, .finance: return .general
+        case .aviation, .map:                  return .aviation
+        case .stocks:                          return .investing
+        }
+    }
+
+    enum Category: String, CaseIterable {
+        case general    = "General"
+        case aviation   = "Aviation"
+        case investing  = "Investing"
+    }
 }
 
 @MainActor
@@ -352,30 +371,46 @@ struct ContentView: View {
     }
 
     private var panePicker: some View {
-        Menu {
-            ForEach(Array(visiblePanes.enumerated()), id: \.element) { idx, pane in
-                Button {
-                    selection = pane
-                } label: {
-                    // Keep the pane's icon visible AND mark the
-                    // current selection — replacing the icon with
-                    // a checkmark robbed the menu of the at-a-
-                    // glance scan that the icons enable.
-                    HStack(spacing: 8) {
-                        Image(systemName: pane.icon)
-                        Text(pane.rawValue)
-                        Spacer()
-                        if pane == selection {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(TallyTheme.accent)
+        // Flat enumeration drives the keyboard shortcut index so
+        // ⌘1..⌘N follow the user-visible order regardless of how the
+        // menu groups items into Sections.
+        let enumerated = Array(visiblePanes.enumerated())
+        let indexOf: (Pane) -> Int = { p in
+            enumerated.first(where: { $0.element == p })?.offset ?? 0
+        }
+        return Menu {
+            // Three semantic sections — General / Aviation / Investing.
+            // Each Section header is rendered as a small grey title in
+            // the macOS menu, with the divider above coming for free.
+            // Sections with zero visible panes are skipped so disabling
+            // a module never leaves an empty heading behind.
+            ForEach(Pane.Category.allCases, id: \.self) { category in
+                let panes = visiblePanes.filter { $0.category == category }
+                if !panes.isEmpty {
+                    Section(category.rawValue) {
+                        ForEach(panes) { pane in
+                            Button {
+                                selection = pane
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: pane.icon)
+                                    Text(pane.rawValue)
+                                    Spacer()
+                                    if pane == selection {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(TallyTheme.accent)
+                                    }
+                                }
+                            }
+                            .keyboardShortcut(
+                                indexOf(pane) < 9
+                                    ? KeyEquivalent(Character("\(indexOf(pane) + 1)"))
+                                    : .return,
+                                modifiers: indexOf(pane) < 9 ? .command : [.command, .option]
+                            )
                         }
                     }
                 }
-                // ⌘1..⌘9 quick-switch — only bind on indices the
-                // user can actually press; saves an Apple-flag
-                // collision on ⌘0.
-                .keyboardShortcut(idx < 9 ? KeyEquivalent(Character("\(idx + 1)")) : .return,
-                                  modifiers: idx < 9 ? .command : [.command, .option])
             }
         } label: {
             Group {
