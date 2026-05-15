@@ -275,6 +275,7 @@ struct ContentView: View {
     @State private var selection: Pane = .calculator
     @State private var showPaneMenu = false
     @State private var showDocsPopover = false
+    @State private var showManagePanesPopover = false
     @AppStorage("tally.appearance") private var appearance: String = "system"
 
     // Per-module enabled flags. Default to true so existing users don't
@@ -412,6 +413,22 @@ struct ContentView: View {
                     }
                 }
             }
+
+            // Pane-visibility config lives at the bottom of the menu it
+            // configures — discoverable when the user is already
+            // asking "where's pane X?" The popover is attached to the
+            // panePicker view below; the menu closes first, the
+            // popover then anchors at the picker glyph.
+            Section {
+                Button {
+                    showManagePanesPopover = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gearshape")
+                        Text("Manage panes…")
+                    }
+                }
+            }
         } label: {
             Group {
                 if selection == .calculator {
@@ -435,6 +452,9 @@ struct ContentView: View {
         .help("Switch pane — currently \(selection.rawValue)")
         .accessibilityLabel("Switch pane")
         .accessibilityValue(selection.rawValue)
+        .popover(isPresented: $showManagePanesPopover, arrowEdge: .bottom) {
+            ManagePanesView()
+        }
     }
 
     private var newDocButton: some View {
@@ -502,3 +522,89 @@ struct ContentView: View {
 }
 
 #Preview { ContentView().environmentObject(AppModel()) }
+
+/// Popover anchored at the pane picker that lets the user toggle the
+/// non-core panes on and off. Replaces what used to be the "Tools"
+/// section of Settings — visibility belongs co-located with the menu
+/// it configures, not buried in app-wide preferences. Calculator and
+/// Timezone are shown as static "always shown" rows so users
+/// understand why they're not toggleable.
+private struct ManagePanesView: View {
+    @AppStorage("tally.panes.finance")  private var enableFinance  = true
+    @AppStorage("tally.panes.aviation") private var enableAviation = true
+    @AppStorage("tally.panes.map")      private var enableMap      = true
+    @AppStorage("tally.panes.stocks")   private var enableStocks   = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Manage panes")
+                .font(.system(.headline))
+                .foregroundStyle(TallyTheme.text)
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 4)
+
+            Text("Hide the panes you don't use. The choice persists across launches.")
+                .font(.caption)
+                .foregroundStyle(TallyTheme.muted)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
+
+            Divider()
+
+            // Always-shown rows so the user understands the universal
+            // panes exist by design and aren't a bug.
+            row(pane: .calculator, alwaysOn: true)
+            row(pane: .timezone, alwaysOn: true)
+
+            Divider()
+                .padding(.horizontal, 14)
+                .padding(.vertical, 2)
+
+            row(pane: .finance,  binding: $enableFinance)
+            row(pane: .aviation, binding: $enableAviation)
+            row(pane: .map,      binding: $enableMap)
+            row(pane: .stocks,   binding: $enableStocks)
+
+            Spacer(minLength: 8)
+        }
+        .frame(width: 380)
+        .padding(.bottom, 10)
+        .themedSheet()
+    }
+
+    @ViewBuilder
+    private func row(pane: Pane,
+                     binding: Binding<Bool>? = nil,
+                     alwaysOn: Bool = false) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: pane.icon)
+                .frame(width: 22, height: 22)
+                .foregroundStyle(TallyTheme.muted)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(pane.rawValue)
+                    .font(.system(.body))
+                    .foregroundStyle(TallyTheme.text)
+                if !alwaysOn, !pane.moduleDescription.isEmpty {
+                    Text(pane.moduleDescription)
+                        .font(.caption2)
+                        .foregroundStyle(TallyTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            if alwaysOn {
+                Text("Always shown")
+                    .font(.caption2)
+                    .foregroundStyle(TallyTheme.muted)
+            } else if let binding {
+                Toggle("", isOn: binding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+}

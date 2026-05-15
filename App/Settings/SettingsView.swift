@@ -18,13 +18,11 @@ struct SettingsView: View {
     @AppStorage("tally.aviation.pressureUnit") private var pressureUnit: String = "hPa"
 
 
-    // Module pane visibility — each toggle hides/shows the corresponding
-    // pane in the top-left dropdown. Defaults match what new users got
-    // before this setting existed, so nothing disappears after upgrade.
-    @AppStorage("tally.panes.finance")      private var enableFinance      = true
-    @AppStorage("tally.panes.aviation")     private var enableAviation     = true
-    @AppStorage("tally.panes.map")          private var enableMap          = true
-    @AppStorage("tally.panes.stocks")       private var enableStocks       = false
+    // Stocks visibility — kept here only to gate the Settings → Stocks
+    // section below (the API-key / plan / cap surface, which makes
+    // sense only when the pane is enabled). Pane-visibility toggles
+    // themselves live in the pane menu's "Manage panes…" popover.
+    @AppStorage("tally.panes.stocks") private var enableStocks = false
 
     // Stocks management UI lives in StocksManageView (shared with the
     // pane's footer popover). The bindings flow into UserDefaults so
@@ -71,30 +69,6 @@ struct SettingsView: View {
                     }
                     .help("Quit and reopen Tally. The cleanest way to apply Menu Bar Only Mode if the Dock icon doesn't disappear.")
                 }
-            }
-
-            // MARK: Tools — pane visibility
-            Section {
-                Toggle(Pane.finance.moduleTitle, isOn: $enableFinance)
-                Text(Pane.finance.moduleDescription)
-                    .font(.caption).foregroundStyle(.secondary)
-
-                Toggle(Pane.aviation.moduleTitle, isOn: $enableAviation)
-                Text(Pane.aviation.moduleDescription)
-                    .font(.caption).foregroundStyle(.secondary)
-
-                Toggle(Pane.map.moduleTitle, isOn: $enableMap)
-                Text(Pane.map.moduleDescription)
-                    .font(.caption).foregroundStyle(.secondary)
-
-                Toggle(Pane.stocks.moduleTitle, isOn: $enableStocks)
-                Text(Pane.stocks.moduleDescription)
-                    .font(.caption).foregroundStyle(.secondary)
-            } header: {
-                Text("Tools")
-            } footer: {
-                Text("Turn off tools you don't use to keep the top-left menu tidy. Calculator and Timezone are always available.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
 
             // MARK: Units
