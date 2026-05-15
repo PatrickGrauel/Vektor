@@ -288,6 +288,10 @@ struct ContentView: View {
             customChrome
             paneContent
         }
+            // Extend the chrome up into the (hidden) title-bar zone so
+            // it lines up horizontally with the traffic lights instead
+            // of sitting ~28pt below them.
+            .ignoresSafeArea(.container, edges: .top)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(TallyTheme.background.ignoresSafeArea())
             .preferredColorScheme(colorScheme(for: appearance))
