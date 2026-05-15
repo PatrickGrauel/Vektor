@@ -43,60 +43,55 @@ final class DocumentStore: ObservableObject {
         let loaded = Self.load()
         var initial: [TallyDocument]
         if loaded.isEmpty {
+            // Seed the first launch with a welcome doc that doubles as a
+            // hands-on tour. Light humor on the section breaks so it
+            // reads less like documentation and more like a friendly nudge.
+            // After first launch the user owns it — edit, delete, rename.
             let first = TallyDocument(content: """
             # Welcome to Tally
-            // Type anywhere; results appear in the gutter on the right.
+            // Each line is its own calculation. The answer pops up on the right.
+            // Click anywhere to start typing — or scroll through these first.
 
-            # Arithmetic & natural language
+            # The classics
             2 + 2
-            8 times 9
-            20% of 50
-            100 - 5%
+            8 * (3.5 + 1)
+            prev / 2          // "prev" = the last result. Saves chaining math.
 
-            # Units (all SI families work)
-            1 meter in cm
+            # Units — Tally's bread and butter
             120 kt in km/h
+            60000 ft in km
             29.92 inHg in hPa
+            2 hours in seconds
 
-            # Currency (live rates load on launch — first time may show 1:1)
-            100 eur in usd
+            # Money (live rates, refreshed in the background)
+            100 EUR in USD
             1 BTC in USD
+            // Yes, even when BTC does the thing it does.
 
-            # Variables, prev, and aggregates
+            # Time zones — for calling people in inconvenient hemispheres
+            Berlin time
+            1430 Zulu in HKT
+            now in Tokyo + 2h
+
+            # Dates — for procrastinators and birthdays alike
+            days between today and 2026-12-25
+            age 1990-03-15
+
+            # Variables — name a number once, reuse it forever
+            a = 100
+            b = 2 * a
+            c = a + b
+            // Yes, this is the algebra they made you do in school.
+            // Turns out it was for something.
+
+            # Now the practical version — for when you really want to know
+            # what something costs you:
             rent = 1450 EUR
             rent * 12
-            prev / 2
-            sum
+            // Spoiler: a lot.
 
-            # Date math
-            days between 2024-01-15 and today
-            age 1990-03-15
-            days until 2026-12-25
-
-            # Time formatting
-            1,8 h in hh:mm:ss
-            125 minutes in hh:mm
-
-            # Timezones
-            Berlin time
-            2:30 pm HKT in Berlin
-            1430 Zulu + 2
-
-            # Finance one-liners
-            loan 300k at 5.5% for 30 years
-            compound 1000 at 7% for 10 years
-            20% tip on 86.50 split 4
-
-            # Lengths & dimensions
-            12'6" + 8'3"
-            4500 mm at 1:50
-            concrete 6 m x 4 m x 0.15 m
-
-            # Aviation
-            density_altitude(8000, 25, 29.92)
-            crosswind(270, 300, 15)
-            METAR EDDM
-            TAF KSFO
+            // ⌘N for a new scratchpad. ⌘L to see all of them.
+            // This doc is yours — edit it, delete it, ignore it. We won't mind.
             """)
             initial = [first]
         } else {
