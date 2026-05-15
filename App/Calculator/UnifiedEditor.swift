@@ -84,6 +84,9 @@ struct UnifiedEditor: NSViewRepresentable {
         divider.onDrag = { [weak column] delta in
             column?.dragDivider(by: delta)
         }
+        divider.onDragEnd = { [weak column] in
+            column?.commitDragEnd()
+        }
 
         let gutter = GutterView()
         gutter.results = results
@@ -388,6 +391,15 @@ final class ColumnContainer: NSView {
         gutter.needsDisplay = true
     }
 
+    /// Live drag — fully synchronous per pixel. We deliberately do
+    /// NOT call `onEditorWidthChange` here: writing to the SwiftUI
+    /// @AppStorage binding triggers a full updateNSView round-trip
+    /// that re-runs all the layout work asynchronously, producing
+    /// the visible asymmetry where the editor (synchronous reflow)
+    /// races ahead of the gutter (async catch-up). Doing the full
+    /// relayoutAndResize here keeps both columns in lockstep at the
+    /// cost of one synchronous pass per drag pixel — still cheap
+    /// enough for typical docs.
     func dragDivider(by delta: CGFloat) {
         let total = bounds.width
         let maxEditor = max(minEditorWidth, total - minGutterWidth - 1)
@@ -395,9 +407,15 @@ final class ColumnContainer: NSView {
         let clamped = min(max(proposed, minEditorWidth), maxEditor)
         if abs(clamped - editorWidth) > 0.5 {
             editorWidth = clamped
-            relayoutChildren()
-            onEditorWidthChange(clamped)
+            relayoutAndResize()
         }
+    }
+
+    /// End-of-drag commit: flush the chosen width back to SwiftUI's
+    /// @AppStorage so the user's preferred split persists. Called
+    /// once per drag (on mouseUp), not per pixel.
+    func commitDragEnd() {
+        onEditorWidthChange(editorWidth)
     }
 }
 
@@ -408,7 +426,12 @@ final class ColumnContainer: NSView {
 /// to the container. The visible line is `TallyTheme.muted` so it
 /// reads as a real separator without being loud — brighter on hover.
 final class DividerStrip: NSView {
+    /// Fired during drag with each horizontal delta.
     var onDrag: (CGFloat) -> Void = { _ in }
+    /// Fired once on mouseUp so the container can flush the final
+    /// width back to persistent storage (avoids a per-pixel SwiftUI
+    /// binding write that would otherwise make the drag jank).
+    var onDragEnd: () -> Void = { }
     private var trackingArea: NSTrackingArea?
     private var lastDragPoint: NSPoint?
     private var isHovering: Bool = false {
@@ -482,6 +505,7 @@ final class DividerStrip: NSView {
 
     override func mouseUp(with event: NSEvent) {
         lastDragPoint = nil
+        onDragEnd()
     }
 }
 
