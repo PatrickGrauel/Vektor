@@ -377,14 +377,14 @@ struct ContentView: View {
                     .accessibilityValue(selection.rawValue)
                 }
 
-                // Custom-styled "Tally" centered in the toolbar — same
-                // typeface family as the SHEET chrome label (SF Pro,
-                // system default), half-translucent so it reads as quiet
-                // wordmark rather than competing with the active pane.
+                // "Tally" centered in the toolbar — rendered in the
+                // default title weight (semibold, matching the native
+                // window title) and half-translucent so the wordmark
+                // reads as a quiet anchor rather than competing with
+                // the active pane.
                 ToolbarItem(placement: .principal) {
                     Text("Tally")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(TallyTheme.text)
+                        .fontWeight(.semibold)
                         .opacity(0.5)
                         .accessibilityHidden(true)
                 }
