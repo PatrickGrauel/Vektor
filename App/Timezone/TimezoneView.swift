@@ -162,6 +162,21 @@ final class PinnedCityStore: ObservableObject {
         cities.removeAll { $0.id == city.id }; persist()
     }
 
+    /// Move the pin at `from` to `to`. `to` follows SwiftUI's `onMove`
+    /// convention: it is the index the moved element should *end up at*,
+    /// after taking into account the removal — so `to > from` means
+    /// "after the current position by (to - from - 1) slots." Use
+    /// `move(fromOffsets:toOffset:)` to get the right semantics for
+    /// free.
+    func move(from source: Int, to destination: Int) {
+        guard source >= 0, source < cities.count,
+              destination >= 0, destination <= cities.count,
+              source != destination
+        else { return }
+        cities.move(fromOffsets: IndexSet(integer: source), toOffset: destination)
+        persist()
+    }
+
     private func persist() {
         if let data = try? JSONEncoder().encode(cities) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
@@ -318,7 +333,11 @@ struct TimezoneView: View {
                     Text("Add at least one pinned place to use the scheduler.")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    TimeStripView(cities: store.cities, cursor: $cursor)
+                    TimeStripView(
+                        cities: store.cities,
+                        cursor: $cursor,
+                        onMove: { from, to in store.move(from: from, to: to) }
+                    )
                         .padding(.vertical, 4)
                     HStack(spacing: 8) {
                         DatePicker("",

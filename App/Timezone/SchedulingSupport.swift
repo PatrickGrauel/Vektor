@@ -19,6 +19,12 @@ import MapKit
 struct TimeStripView: View {
     let cities: [PinnedCity]
     @Binding var cursor: Date
+    /// Reorder callback. Invoked when the user drops one row onto
+    /// another. Arguments follow `Array.move(fromOffsets:toOffset:)`
+    /// semantics — `to` is the destination index expressed in terms
+    /// of the post-removal array. Optional so callers without a
+    /// mutable store (previews, tests) can omit it.
+    var onMove: ((Int, Int) -> Void)? = nil
 
     /// Half-day of hours either side of the cursor. 12 hours either side
     /// covers a 25-cell strip, which fits a "morning here, evening there"
@@ -30,22 +36,69 @@ struct TimeStripView: View {
     /// `start + delta` rather than additively shifting on every callback.
     @State private var dragStartCursor: Date? = nil
 
+    /// Width of the leading label column. Kept as a constant so the
+    /// hour header above can use the same offset for its axis — without
+    /// it, the header's hour ticks and cursor line drift to the left of
+    /// the strip below (the header took the full row width, while each
+    /// city's strip lived inside a GeometryReader that started after the
+    /// label column).
+    private static let labelColumnWidth: CGFloat = 130
+    private static let labelStripGap: CGFloat = 8
+    private static let outerPadding: CGFloat = 8
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header row: hour ticks aligned to the strip below.
-            GeometryReader { geo in
-                hourHeader(width: geo.size.width)
+            // Header row: hour ticks aligned to the strip below. The
+            // leading `Color.clear` reserves the same 130 + 8 pt of
+            // space that each city's label column eats below, so the
+            // hour ticks and the cursor line in the header sit in the
+            // identical x-frame as the squares in every row.
+            HStack(spacing: Self.labelStripGap) {
+                Color.clear.frame(width: Self.labelColumnWidth)
+                GeometryReader { geo in
+                    hourHeader(width: geo.size.width)
+                }
+                .frame(height: 22)
             }
-            .frame(height: 22)
+            .padding(.horizontal, Self.outerPadding)
 
             ForEach(cities) { city in
                 cityRow(city: city)
                     .frame(height: 28)
+                    .draggable(city.id.uuidString) {
+                        Text(city.name)
+                            .font(.system(.body, design: .default))
+                            .foregroundStyle(TallyTheme.text)
+                            .padding(6)
+                            .background(TallyTheme.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    .dropDestination(for: String.self) { items, _ in
+                        handleDrop(items, onto: city)
+                    }
             }
         }
         .padding(.vertical, 4)
         .background(TallyTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Resolve a drop onto `target` from one or more dragged UUIDs.
+    /// Returns true if the model was reordered. The reorder call uses
+    /// SwiftUI's onMove insertion-point convention: when dragging
+    /// downwards (source index < target), the destination is `target +
+    /// 1` because the source's removal shifts the target one slot up.
+    private func handleDrop(_ items: [String], onto target: PinnedCity) -> Bool {
+        guard let raw = items.first,
+              let sourceID = UUID(uuidString: raw),
+              let sourceIdx = cities.firstIndex(where: { $0.id == sourceID }),
+              let targetIdx = cities.firstIndex(where: { $0.id == target.id }),
+              sourceIdx != targetIdx,
+              let onMove
+        else { return false }
+        let destination = targetIdx > sourceIdx ? targetIdx + 1 : targetIdx
+        onMove(sourceIdx, destination)
+        return true
     }
 
     // MARK: - Hour header
