@@ -152,6 +152,7 @@ struct CalculatorPane: View {
                 if isWeather {
                     applyVisibilityHighlight(to: lineAttr, source: line)
                     applyCeilingHighlight(to: lineAttr, source: line)
+                    applyThunderstormHighlight(to: lineAttr, source: line)
                 }
                 result.append(lineAttr)
                 if idx < lines.count - 1 {
@@ -289,6 +290,33 @@ struct CalculatorPane: View {
             else if feet <= 3000 { colour = NSColor(TallyTheme.statusCaution) }
             else                 { continue }
             attr.addAttribute(.foregroundColor, value: colour, range: match.range)
+        }
+    }
+
+    /// METAR/TAF thunderstorm highlight — `TS`, `TSRA`, `+TSRA`,
+    /// `-TSRA`, `TSGR`, `TSGSRA`, etc. all match. Painted red
+    /// regardless of intensity prefix: a thunderstorm is the
+    /// hazard (CB clouds, lightning, downdrafts, wind shear) —
+    /// the precipitation type is informational, not a tier change.
+    ///
+    /// The regex captures the whole token including any leading
+    /// `+`/`-` intensity character, anchored on whitespace or
+    /// line boundaries so we don't false-match `TS` inside other
+    /// words (e.g. `MOST` or a remark abbreviation).
+    private static let thunderstormRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"(?:^|\s)([+\-]?TS[A-Z]{0,6})(?=\s|$)"#)
+    }()
+    private static func applyThunderstormHighlight(to attr: NSMutableAttributedString, source: String) {
+        guard let regex = thunderstormRegex else { return }
+        let ns = source as NSString
+        let fullRange = NSRange(location: 0, length: ns.length)
+        for match in regex.matches(in: source, range: fullRange) {
+            // Group 1 is the token without the leading whitespace.
+            let tokenRange = match.range(at: 1)
+            guard tokenRange.location != NSNotFound else { continue }
+            attr.addAttribute(.foregroundColor,
+                              value: NSColor(TallyTheme.statusBad),
+                              range: tokenRange)
         }
     }
 
