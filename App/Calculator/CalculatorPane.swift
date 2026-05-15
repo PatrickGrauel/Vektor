@@ -30,20 +30,23 @@ struct CalculatorPane: View {
                                        systemImage: "exclamationmark.triangle",
                                        description: Text(error))
             } else {
-                UnifiedEditor(
-                    text: Binding(
-                        get: { documents.selected.content },
-                        set: { documents.updateSelectedContent($0) }
-                    ),
-                    editorWidth: Binding(
-                        get: { CGFloat(editorWidth) },
-                        set: { editorWidth = Double($0) }
-                    ),
-                    results: results,
-                    renderValue: { Self.renderValue($0) },
-                    renderAnnotation: { Self.renderAnnotation($0) }
-                )
-                .overlay(alignment: .bottomLeading) { gearButton }
+                VStack(spacing: 0) {
+                    sheetHeader
+                    UnifiedEditor(
+                        text: Binding(
+                            get: { documents.selected.content },
+                            set: { documents.updateSelectedContent($0) }
+                        ),
+                        editorWidth: Binding(
+                            get: { CGFloat(editorWidth) },
+                            set: { editorWidth = Double($0) }
+                        ),
+                        results: results,
+                        renderValue: { Self.renderValue($0) },
+                        renderAnnotation: { Self.renderAnnotation($0) }
+                    )
+                    .overlay(alignment: .bottomLeading) { gearButton }
+                }
             }
         }
         .background(TallyTheme.background)
@@ -69,6 +72,35 @@ struct CalculatorPane: View {
         // lines), and triggers `handleMetarLine` to nudge the cache bridge
         // — which itself decides whether to actually go to the network.
         .onReceive(recomputeTick) { _ in evaluate() }
+    }
+
+    // MARK: - Sheet header
+
+    /// Chrome strip above the editor — `SHEET · <NAME>` in tracked small-caps
+    /// with a hairline below. Title is inferred from the document's first
+    /// meaningful line (see `TallyDocument.title`); empty docs read as
+    /// "SCRATCH". Sans-serif on purpose so the chrome reads as a distinct
+    /// layer from the monospaced editor content below.
+    private var sheetHeader: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("SHEET")
+                Text("·")
+                Text(documents.selected.title.uppercased())
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 10.5, weight: .medium))
+            .tracking(1.6)
+            .foregroundStyle(TallyTheme.muted)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+
+            Rectangle()
+                .fill(TallyTheme.divider)
+                .frame(height: 0.5)
+        }
     }
 
     // MARK: - Gear

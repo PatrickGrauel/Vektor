@@ -27,7 +27,7 @@ struct TallyDocument: Identifiable, Codable, Equatable {
             if stripped.isEmpty { continue }
             return String(stripped.prefix(60))
         }
-        return "Untitled"
+        return "Scratch"
     }
 }
 
