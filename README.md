@@ -1,6 +1,6 @@
 # Tally
 
-A native macOS calculator built for pilots. A natural-language scratchpad on one side, first-class aviation tooling on the other — METAR/TAF/ATIS decoding with freshness indicators, E6B flight computer, weight & balance.
+A native macOS calculator built for pilots. A natural-language scratchpad on one side, first-class aviation tooling on the other — METAR/TAF/ATIS decoding with freshness indicators, E6B flight computer, weight & balance. Plus optional Finance and Buffett-style Stocks analysis modules for when you're not in the cockpit.
 
 ## Features
 
@@ -17,6 +17,14 @@ A native macOS calculator built for pilots. A natural-language scratchpad on one
 - **E6B** — wind triangle, density altitude, runway crosswind/headwind component, top-of-descent, fuel.
 - **Weight & balance** — saved per-aircraft profiles.
 
+**Stocks** *(off by default — enable in Settings → Tools)*
+- **DCA scorecard** — type a US-listed ticker and get a Warren Buffett-style "Durable Competitive Advantage" 6-axis scorecard (Pricing Power, Cost Discipline, Earnings Quality, Capital Efficiency, Balance Sheet Safety, Capital Allocation), each scored 0–10 against the rubric from *Warren Buffett and the Interpretation of Financial Statements* (Mary Buffett & David Clark).
+- **Radar + sparklines + trend chips** — six-axis radar chart with the per-axis score next to each label, plus an inline 5-year sparkline on every row with a direction chip (↑ improving / → stable / ↓ deteriorating).
+- **Drill-down with threshold bands** — click any axis to expand into a detail view showing the underlying metric's 5-year trend with Buffett's score cutoffs drawn as tinted regions. Composite axes (Cost Discipline, Balance Sheet, Capital Allocation) plot every contributing input on the same chart — Cost Discipline shows SG&A *and* R&D *and* Depreciation, so you can see which input drives the score.
+- **Cached + rate-aware** — five-year statements cached on disk for 7 days; daily call budget enforced locally with plan-aware hard caps (Free / Starter / Pro / Premium / Custom). Pre-flight probe limits coverage-gap misses to one API call each. Friendly "not in your data plan" empty-state for international or paywalled tickers instead of raw HTTP errors.
+
+Powered by [Financial Modeling Prep](https://site.financialmodelingprep.com/developer/docs) — get a free key, paste it into the in-pane setup card.
+
 **Productivity**
 - Finance scenarios — loan amortization, real estate yield, tip calculator.
 - Document-based — multiple scratchpads, persisted across launches.
@@ -31,6 +39,16 @@ A native macOS calculator built for pilots. A natural-language scratchpad on one
 - **The Pilot in Command remains solely responsible** for the safe conduct of the flight per applicable regulations (14 CFR § 91 in the U.S., EASA Air OPS / Part-NCO / SERA in the EU, or your operating state's equivalent). Using Tally does not relieve the PIC of any obligation.
 
 See [**DISCLAIMER.md**](DISCLAIMER.md) for the full safety and liability disclaimer. If you are not willing to accept those terms, do not install or use Tally for any aviation-related purpose.
+
+## ⚠️ Not financial advice — Stocks pane
+
+**Tally is NOT a financial advisor, broker, or registered investment professional.** The Stocks pane computes a quantitative score against one specific framework (Mary Buffett & David Clark's "Durable Competitive Advantage" rubric) from financial statements pulled from a third-party API.
+
+- **It is not investment advice.** A high or low score is not a buy or sell recommendation. The framework is opinionated, applies primarily to mature US large-caps, and produces nonsensical results for financial-sector companies, recent IPOs, REITs, and unusual capital structures.
+- **The data is third-party.** Financial Modeling Prep returns the statements; they may be delayed, incomplete, misclassified, or restated by the issuer.
+- **The free tier covers a curated subset.** Many US large-caps (BRK.B, MCO, PG, HD, MA, etc.), most international listings, and delisted companies require a paid FMP plan.
+- **The 5-year window understates the framework.** The book recommends 10 years; the FMP free tier returns 5. Tally flags this in the rationale text.
+- **Do your own due diligence.** Cross-check with primary sources (SEC filings, the company's annual report, earnings calls) and consult a licensed financial advisor before making any investment decision. The Pilot in Command of your portfolio is you.
 
 ## Install as a Mac app
 
@@ -91,7 +109,8 @@ The math.js JS bundle at `Packages/TallyEngine/Sources/TallyEngine/Resources/mat
 
 ## Architecture
 
-- `App/` — SwiftUI macOS shell. `Calculator/`, `Aviation/`, `Finance/`, `Timezone/`, `Settings/`, plus the menu bar controller.
+- `App/` — SwiftUI macOS shell. `Calculator/`, `Aviation/`, `Finance/`, `Stocks/`, `Timezone/`, `Settings/`, plus the menu bar controller.
+- `App/Stocks/` — DCA scoring engine, FMP API client (on-disk cache + UTC-aligned daily call budget + plan-aware hard cap), drill-down chart canvas with Buffett-rubric threshold bands, and the radar/sparkline/manage-popover UI.
 - `Packages/TallyEngine` — `JSContext` + math.js bundle + a Swift preprocessor for natural-language sugar (`5% off $40`, `$20 in eur`, `today + 2 weeks`, `sum`, `prev`) + host bridges for timezone / FX / crypto / aviation / METAR cache.
 - `Packages/TallyAviation` — pure-Swift E6B math, weight & balance, atmosphere model, METAR/TAF parser.
 - `JS/` — npm workspace; esbuild bundles math.js into the resources directory above.
@@ -99,6 +118,8 @@ The math.js JS bundle at `Packages/TallyEngine/Sources/TallyEngine/Resources/mat
 ## Acknowledgements
 
 The natural-language calculator style is inspired by [Numi](https://numi.app). Tally is a from-scratch implementation built on **math.js** (Apache 2.0) embedded in `JSContext`, with an original preprocessor and aviation toolkit.
+
+The Stocks pane's scoring rubric comes from **Mary Buffett & David Clark's** *Warren Buffett and the Interpretation of Financial Statements* (Scribner, 2008). Tally implements one analytical interpretation of that framework — it does not represent the authors' or Warren Buffett's views. Financial statements are fetched from [**Financial Modeling Prep**](https://site.financialmodelingprep.com/developer/docs).
 
 ## License
 
