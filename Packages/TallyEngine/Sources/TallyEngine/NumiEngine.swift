@@ -140,6 +140,14 @@ public final class NumiEngine {
         var results: [LineResult] = []
         var previousValues: [String] = []
 
+        // Open a quote-bridge transaction so stock prefetches are
+        // book-kept across this whole evaluation. Pairs with the
+        // `endEvaluation` call after the loop — cancels pending
+        // fetches for symbols no longer in the document so typing
+        // `stock NVDA` one char at a time only fires one API call.
+        QuoteCacheBridge.shared.beginEvaluation()
+        defer { QuoteCacheBridge.shared.endEvaluation() }
+
         // Fresh document = fresh variable scope. Variables declared on earlier
         // lines (`House = 100k EUR`) flow into later lines (`House * 2`).
         _ = context.evaluateScript("tally.resetScope();")

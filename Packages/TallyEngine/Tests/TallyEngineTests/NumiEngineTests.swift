@@ -882,6 +882,56 @@ final class NumiEngineTests: XCTestCase {
                        "6-letter token must not be treated as a ticker; got: \(result)")
     }
 
+    @MainActor
+    func testStockTypingDoesNotBurnAPICallsOnEachKeystroke() throws {
+        // Simulate slow typing: each evaluate() represents one
+        // keystroke landing after the calculator pane's 120 ms debounce.
+        // Without per-evaluation transaction handling, this sequence
+        // would queue four independent fetches (N, NV, NVD, NVDA);
+        // with it, only NVDA survives as pending — every intermediate
+        // symbol gets cancelled when the next evaluation removes it
+        // from the requested set.
+        let engine = try NumiEngine()
+        let bridge = QuoteCacheBridge.shared
+        bridge._reset()
+
+        _ = engine.evaluate("stock N")
+        XCTAssertEqual(bridge._pendingCount, 1, "first eval schedules 1 pending fetch")
+
+        _ = engine.evaluate("stock NV")
+        XCTAssertEqual(bridge._pendingCount, 1,
+                       "second eval should cancel N and schedule NV — still 1 pending")
+
+        _ = engine.evaluate("stock NVD")
+        XCTAssertEqual(bridge._pendingCount, 1,
+                       "third eval should cancel NV and schedule NVD — still 1 pending")
+
+        _ = engine.evaluate("stock NVDA")
+        XCTAssertEqual(bridge._pendingCount, 1,
+                       "fourth eval should cancel NVD and schedule NVDA — still 1 pending")
+
+        bridge._reset()
+    }
+
+    @MainActor
+    func testStockLineRemovalCancelsPendingFetch() throws {
+        // Typing `stock AAPL` then deleting the whole line before the
+        // settle window elapses must cancel the pending fetch — there's
+        // no symbol left in the document to fetch for.
+        let engine = try NumiEngine()
+        let bridge = QuoteCacheBridge.shared
+        bridge._reset()
+
+        _ = engine.evaluate("stock AAPL")
+        XCTAssertEqual(bridge._pendingCount, 1)
+
+        _ = engine.evaluate("2 + 2")
+        XCTAssertEqual(bridge._pendingCount, 0,
+                       "removing the stock line must cancel its pending fetch")
+
+        bridge._reset()
+    }
+
     // MARK: - User variables: case-insensitive
     //
     // The shared eval scope is wrapped in a Proxy that lowercases keys so
