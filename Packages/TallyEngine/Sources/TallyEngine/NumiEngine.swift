@@ -792,7 +792,8 @@ public final class NumiEngine {
 
         var blocks: [String] = []
         var tones: [LineResult.Annotation.Tone] = []
-        var ages: [Int] = []
+        var metarAge: Int? = nil
+        var tafAge: Int? = nil
 
         for icao in icaos {
             let metarLine = handleMetarLine("METAR \(icao)")
@@ -803,18 +804,12 @@ public final class NumiEngine {
             var block = ""
             if let m = metarLine {
                 block += m.value
-                if let a = m.annotation {
-                    block += "\n            METAR \(a.label)"
-                    tones.append(a.tone)
-                }
+                if let t = m.annotation?.tone { tones.append(t) }
             }
             if let t = tafLine {
                 if !block.isEmpty { block += "\n\n" }
                 block += t.value
-                if let a = t.annotation {
-                    block += "\n            TAF \(a.label)"
-                    tones.append(a.tone)
-                }
+                if let tn = t.annotation?.tone { tones.append(tn) }
             }
             if let r = rwyText {
                 if !block.isEmpty { block += "\n\n" }
@@ -824,13 +819,24 @@ public final class NumiEngine {
             block += altText
             blocks.append(block)
 
-            // Track METAR age for the overall annotation. TAFs have
-            // their own age semantics so we don't conflate.
-            if let cached = MainActor.assumeIsolated({
+            // Track ages per kind so the bottom annotation can say
+            // "METAR 12m · TAF 3h" instead of conflating the two
+            // (which have very different freshness windows).
+            if let mc = MainActor.assumeIsolated({
                 MetarCacheBridge.shared.cached(kind: .metar, icao: icao)
             }) {
-                let reference = Self.observationTime(in: cached.raw) ?? cached.fetchedAt
-                ages.append(Int(Date().timeIntervalSince(reference)))
+                let age = Int(Date().timeIntervalSince(
+                    Self.observationTime(in: mc.raw) ?? mc.fetchedAt
+                ))
+                metarAge = max(metarAge ?? 0, age)
+            }
+            if let tc = MainActor.assumeIsolated({
+                MetarCacheBridge.shared.cached(kind: .taf, icao: icao)
+            }) {
+                let age = Int(Date().timeIntervalSince(
+                    Self.observationTime(in: tc.raw) ?? tc.fetchedAt
+                ))
+                tafAge = max(tafAge ?? 0, age)
             }
         }
 
@@ -838,12 +844,12 @@ public final class NumiEngine {
         let worstTone: LineResult.Annotation.Tone =
             tones.contains(.outdated) ? .outdated :
             tones.contains(.stale)    ? .stale    : .fresh
-        let label: String
-        if let oldest = ages.max() {
-            label = "briefing · METAR \(Self.formatAge(oldest)) old"
-        } else {
-            label = "briefing · awaiting data"
-        }
+        var labelParts: [String] = []
+        if let m = metarAge { labelParts.append("METAR \(Self.formatAge(m))") }
+        if let t = tafAge   { labelParts.append("TAF \(Self.formatAge(t))") }
+        let label = labelParts.isEmpty
+            ? "awaiting data"
+            : labelParts.joined(separator: " · ")
         return MetarLine(value: value, annotation: LineResult.Annotation(label: label, tone: worstTone))
     }
 

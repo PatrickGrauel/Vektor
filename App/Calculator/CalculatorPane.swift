@@ -272,7 +272,10 @@ struct CalculatorPane: View {
     /// (`Q1018`/`A2992`) and timestamp (`150550Z`) cases — letters
     /// adjacent to the digits break the `\b` boundary.
     private static let visibilityMetersRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"(?<!/)\b(\d{4})\b(?!/)"#)
+        // `(?! ft)` excludes altitude readings ("1516 ft" in briefing /
+        // altitude output) which would otherwise be painted red as if
+        // they were sub-5000-m visibility values.
+        try? NSRegularExpression(pattern: #"(?<!/)\b(\d{4})\b(?! ft)(?!/)"#)
     }()
     /// US-style statute-mile visibility (e.g. `5SM`, `3SM`). Fractional
     /// forms like `1 1/2SM` are deliberately skipped — they're already
