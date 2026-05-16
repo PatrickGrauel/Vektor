@@ -203,6 +203,7 @@ struct CalculatorPane: View {
                     applyVisibilityHighlight(to: lineAttr, source: line)
                     applyCeilingHighlight(to: lineAttr, source: line)
                     applyThunderstormHighlight(to: lineAttr, source: line)
+                    applySignificantWeatherHighlight(to: lineAttr, source: line)
                 }
                 result.append(lineAttr)
                 if idx < lines.count - 1 {
@@ -329,16 +330,25 @@ struct CalculatorPane: View {
     /// flight-category boundaries (inclusive):
     ///   • height ≤ 1000 ft AGL → red   (IFR / LIFR)
     ///   • height ≤ 3000 ft AGL → amber (MVFR)
+    /// Optional `CB` / `TCU` suffix on cloud groups (e.g. `BKN035CB`,
+    /// `BKN020TCU`) breaks the simple `\b(\d{3})\b` match because the
+    /// digit→letter transition is not a word boundary. Including the
+    /// suffix as part of the pattern lets the regex match the full
+    /// cloud token; the colour is still applied to the BKN/OVC/VV +
+    /// digits portion (`match.range`), and the suffix is coloured
+    /// separately by `applySignificantWeatherHighlight`.
     private static let ceilingRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"\b(BKN|OVC|VV)(\d{3})\b"#)
+        try? NSRegularExpression(pattern: #"\b(BKN|OVC|VV)(\d{3})(?:CB|TCU)?\b"#)
     }()
     private static func applyCeilingHighlight(to attr: NSMutableAttributedString, source: String) {
         guard let regex = ceilingRegex else { return }
         let ns = source as NSString
         let fullRange = NSRange(location: 0, length: ns.length)
         for match in regex.matches(in: source, range: fullRange) {
+            let prefixRange = match.range(at: 1)
             let heightRange = match.range(at: 2)
             guard heightRange.location != NSNotFound,
+                  prefixRange.location != NSNotFound,
                   let hundreds = Int(ns.substring(with: heightRange))
             else { continue }
             let feet = hundreds * 100
@@ -346,7 +356,16 @@ struct CalculatorPane: View {
             if feet <= 1000      { colour = NSColor(TallyTheme.statusBad) }
             else if feet <= 3000 { colour = NSColor(TallyTheme.statusCaution) }
             else                 { continue }
-            attr.addAttribute(.foregroundColor, value: colour, range: match.range)
+            // Colour only BKN/OVC/VV + the height digits, NOT the
+            // optional CB/TCU suffix — the suffix gets its own colour
+            // from `applySignificantWeatherHighlight` (TCU amber, CB
+            // red). Without this restriction, the ceiling pass would
+            // overwrite the suffix colour.
+            let ceilingRange = NSRange(
+                location: prefixRange.location,
+                length: prefixRange.length + heightRange.length
+            )
+            attr.addAttribute(.foregroundColor, value: colour, range: ceilingRange)
         }
     }
 
@@ -375,6 +394,83 @@ struct CalculatorPane: View {
                               value: NSColor(TallyTheme.statusBad),
                               range: tokenRange)
         }
+    }
+
+    /// METAR/TAF significant-weather highlights beyond visibility, ceiling,
+    /// and TS-prefixed tokens. Two tiers, both anchored so the regexes
+    /// can't false-match inside unrelated text.
+    ///
+    /// **Red (severe — avoid):**
+    ///   • `CB` — cumulonimbus cloud (thunderstorm-active)
+    ///   • `FZRA`, `FZDZ`, `FZFG` — freezing precipitation / fog (severe icing)
+    ///   • `+RA`, `+SN`, `+DZ`, `+TSRA`, `+SHRA`, `+SHSN` — heavy precipitation
+    ///   • `GR` — hail
+    ///   • `VA` — volcanic ash
+    ///   • `DS`, `SS`, `+DS`, `+SS` — duststorm / sandstorm
+    ///   • `FC` — funnel cloud / tornado / waterspout
+    ///   • `SQ` — squall
+    ///
+    /// **Amber (caution):**
+    ///   • `TCU` — towering cumulus (precursor to CB)
+    ///   • `SHRA`, `SHSN`, `SHGR`, `SHGS` — showers (convective, can be turbulent)
+    ///   • `GS` — small hail
+    ///   • `FG` — fog (visibility hazard)
+    ///
+    /// Order matters: caution runs first so severe overwrites where
+    /// they overlap on the same range (e.g., `+SHRA` should land in
+    /// the severe tier, not caution).
+
+    /// Cloud-suffix CB (severe). Word boundaries match it as a suffix
+    /// on cloud groups like `BKN035CB` (digit→letter is a boundary).
+    private static let cloudSuffixSevereRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"\bCB\b"#)
+    }()
+    /// Cloud-suffix TCU (caution).
+    private static let cloudSuffixCautionRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"\bTCU\b"#)
+    }()
+    /// Whitespace-anchored severe weather groups. Each group is a
+    /// standalone METAR token; `(?:^|\s)…(?=\s|$)` anchors prevent
+    /// false matches inside arbitrary identifiers.
+    private static let severeWeatherGroupRegex: NSRegularExpression? = {
+        let alts = [
+            "VA", "GR", "FZRA", "FZDZ", "FZFG", "SQ", "FC", "DS", "SS",
+            #"\+RA"#, #"\+SN"#, #"\+DZ"#, #"\+TSRA"#, #"\+SHRA"#, #"\+SHSN"#,
+            #"\+DS"#, #"\+SS"#,
+        ].joined(separator: "|")
+        return try? NSRegularExpression(pattern: "(?:^|\\s)(\(alts))(?=\\s|$)")
+    }()
+    /// Whitespace-anchored caution weather groups.
+    private static let cautionWeatherGroupRegex: NSRegularExpression? = {
+        let alts = ["SHRA", "SHSN", "SHGR", "SHGS", "FG", "GS"].joined(separator: "|")
+        return try? NSRegularExpression(pattern: "(?:^|\\s)(\(alts))(?=\\s|$)")
+    }()
+
+    private static func applySignificantWeatherHighlight(to attr: NSMutableAttributedString,
+                                                         source: String) {
+        let ns = source as NSString
+        let fullRange = NSRange(location: 0, length: ns.length)
+
+        func apply(regex: NSRegularExpression?, captureGroup: Int, color: NSColor) {
+            guard let regex else { return }
+            for match in regex.matches(in: source, range: fullRange) {
+                let r = match.range(at: captureGroup)
+                guard r.location != NSNotFound else { continue }
+                attr.addAttribute(.foregroundColor, value: color, range: r)
+            }
+        }
+
+        // Caution first; severe second so any overlap (e.g. `+SHRA`
+        // would otherwise be matched as `SHRA` caution + `+SHRA` severe)
+        // ends with the severe colour.
+        apply(regex: cautionWeatherGroupRegex, captureGroup: 1,
+              color: NSColor(TallyTheme.statusCaution))
+        apply(regex: cloudSuffixCautionRegex, captureGroup: 0,
+              color: NSColor(TallyTheme.statusCaution))
+        apply(regex: severeWeatherGroupRegex, captureGroup: 1,
+              color: NSColor(TallyTheme.statusBad))
+        apply(regex: cloudSuffixSevereRegex, captureGroup: 0,
+              color: NSColor(TallyTheme.statusBad))
     }
 
     /// Join orphan `PROB30` / `PROB40` lines onto the following
