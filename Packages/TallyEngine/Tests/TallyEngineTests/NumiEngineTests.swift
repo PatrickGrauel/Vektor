@@ -838,6 +838,24 @@ final class NumiEngineTests: XCTestCase {
                       "altitude for an unknown ICAO should report missing data, got: \(r)")
     }
 
+    func testAltitudeUsesOverrideTableForRunwayBlankLargeAirports() throws {
+        // VTBS (Bangkok Suvarnabhumi) has no runway-end elevation in the
+        // bundled runways.csv — before the override table, altitude VTBS
+        // returned "no runway data — elevation unknown." The override
+        // table maps it to 5 ft (canonical OurAirports). This test
+        // pins that lookup so the override file can't quietly drift
+        // out of the engine path.
+        let engine = try NumiEngine()
+        let bkk = engine.evaluate("altitude VTBS").first?.value ?? ""
+        XCTAssertTrue(bkk.contains("elev 5 ft") || bkk.contains("VTBS  elev 5"),
+                      "Suvarnabhumi (VTBS) should report 5 ft via override, got: \(bkk)")
+
+        // Spot-check a second one — Tulum (MMTL), elev 66 ft canonical.
+        let tlm = engine.evaluate("altitude MMTL").first?.value ?? ""
+        XCTAssertTrue(tlm.contains("elev 66 ft"),
+                      "Tulum (MMTL) should report 66 ft via override, got: \(tlm)")
+    }
+
     func testBriefingLineRecognised() throws {
         let engine = try NumiEngine()
         let r = engine.evaluate("briefing EDMA").first?.value ?? ""

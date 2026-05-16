@@ -694,14 +694,30 @@ public final class NumiEngine {
 
     // MARK: - Altitude / Briefing
 
-    /// Field elevation in feet for an airport. The bundled `airports.csv`
-    /// was slimmed and doesn't carry an `elevation_ft` column, so we
-    /// derive it from the highest runway-end elevation in `runways.csv`
-    /// — that matches the published field elevation convention (highest
-    /// usable point of the landing area) within ~1 ft for the airports
-    /// we've spot-checked (EDMA, EDDM, KJFK, KSFO).
+    /// Field elevation in feet for an airport. Two-stage lookup:
+    ///
+    /// 1. Check `AirportElevationOverrides` — a small table of large
+    ///    airports whose runway-end elevations are blank in the bundled
+    ///    `runways.csv` but whose `elevation_ft` is published in the
+    ///    canonical OurAirports `airports.csv`. This covers ~74 large
+    ///    international airports (Suvarnabhumi, Phú Quốc, Pune, Bagdogra,
+    ///    Šanlıurfa GAP, Pokhara, Tulum, several Chinese new builds, …)
+    ///    that the runway-derived fallback misses.
+    ///
+    /// 2. Fall back to `max(runway-end elevations)` in `runways.csv` —
+    ///    matches published field elevation within ~1 ft for the
+    ///    airports we've spot-checked (EDMA, EDDM, KJFK, KSFO) and
+    ///    covers the long tail of small / medium airports without
+    ///    needing a manual override entry.
+    ///
+    /// Returns nil only when both sources are blank — the seven
+    ///    genuinely-unknown large airports (BD-0044, BJ-0001, WPOC,
+    ///    YE-0012, ZGZJ, ZLDH, ZSLG) and most small private fields.
     static func fieldElevationFt(forICAO icao: String) -> Int? {
         let canonical = AirportCodeMap.canonicalICAO(from: icao) ?? icao
+        if let override = AirportElevationOverrides.byIdent[canonical] {
+            return override
+        }
         let runways = RunwayDatabase.shared.runways(forICAO: canonical)
         let ends = runways.flatMap { [$0.leElevationFt, $0.heElevationFt] }.compactMap { $0 }
         return ends.max()
