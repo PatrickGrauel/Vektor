@@ -103,6 +103,37 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertEqual(results.first?.value, "2 500")
     }
 
+    func testScaleM() throws {
+        // `15M IDR` = 15 million IDR. M suffix must expand before the
+        // currency token is parsed by math.js.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("15M IDR").first?.value ?? ""
+        XCTAssertTrue(r.contains("15 000 000"),
+                      "15M should expand to 15 million, got: \(r)")
+    }
+
+    func testScaleB() throws {
+        // `1B EUR` = 1 billion EUR. The headline case from the bug
+        // report. Output is grouped: "1 000 000 000".
+        let engine = try NumiEngine()
+        let r = engine.evaluate("1B EUR").first?.value ?? ""
+        XCTAssertTrue(r.contains("1 000 000 000"),
+                      "1B should expand to 1 billion, got: \(r)")
+    }
+
+    func testScaleBDoesNotEatBTC() throws {
+        // The `\b` word-boundary in the B-suffix regex must NOT match
+        // inside `BTC` — `1 BTC` should stay a Bitcoin amount, not
+        // become "1 billion TC". Same guard protects `100MB`, `1MHz`,
+        // `1MW` from being eaten by the M-suffix rule.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("1 BTC").first?.value ?? ""
+        XCTAssertFalse(r.contains("1 000 000 000"),
+                       "1 BTC must not be expanded to a billion: \(r)")
+        XCTAssertTrue(r.localizedCaseInsensitiveContains("BTC"),
+                      "1 BTC must remain a Bitcoin amount: \(r)")
+    }
+
     func testCurrencySymbolNoFX() throws {
         // Without FX setup, $20 should at least parse as "20 USD" and yield a unit value
         let engine = try NumiEngine()

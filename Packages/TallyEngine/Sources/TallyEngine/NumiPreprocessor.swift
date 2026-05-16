@@ -583,8 +583,14 @@ struct NumiPreprocessor {
     private func rewriteScales(_ input: String) -> String {
         var s = input
         let pairs: [(String, String)] = [
-            (#"(\d+(?:\.\d+)?)\s*k\b"#, "($1 * 1000)"),       // lowercase k = thousands
-            (#"(\d+(?:\.\d+)?)\s*M\b"#, "($1 * 1000000)"),    // uppercase M = millions
+            (#"(\d+(?:\.\d+)?)\s*k\b"#, "($1 * 1000)"),          // lowercase k = thousands
+            (#"(\d+(?:\.\d+)?)\s*M\b"#, "($1 * 1000000)"),       // uppercase M = millions
+            // B = billions. The `\b` word-boundary requirement is what
+            // keeps `1BTC` (crypto) and `100MB`-style tokens from
+            // matching — `B` followed by another word character is not
+            // a boundary, so only `1B`, `1B EUR`, `1B/s`, `1B.` etc.
+            // are rewritten.
+            (#"(\d+(?:\.\d+)?)\s*B\b"#, "($1 * 1000000000)"),    // uppercase B = billions
             (#"(\d+(?:\.\d+)?)\s+thousand\b"#, "($1 * 1000)"),
             (#"(\d+(?:\.\d+)?)\s+million\b"#, "($1 * 1000000)"),
             (#"(\d+(?:\.\d+)?)\s+billion\b"#, "($1 * 1000000000)"),
