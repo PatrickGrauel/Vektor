@@ -17,7 +17,7 @@ xcuserdata/
 Package.resolved
 
 # Generated project (regenerated from project.yml)
-Tally.xcodeproj/
+Vektor.xcodeproj/
 
 # Generated JS bundle (regenerated from Vendor/numi by Scripts/bundle-numi.sh)
 Packages/TallyEngine/Sources/TallyEngine/Resources/numi.bundle.js
