@@ -42,12 +42,26 @@ public actor CityResolver {
                                appropriateFor: nil, create: true))
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         self.cacheURL = dir.appendingPathComponent("cityResolver.cache.json")
+
+        var loaded: [String: Resolved] = [:]
         if let data = try? Data(contentsOf: cacheURL),
            let dict = try? JSONDecoder().decode([String: Resolved].self, from: data) {
-            self.dynamicCache = dict
-            for (k, v) in dict { Self.synchronousCacheSnapshot.set(k, v) }
-        } else {
-            self.dynamicCache = [:]
+            loaded = dict
+        }
+        // Purge entries that would now be shadowed by the static alias table.
+        // Earlier versions let CLGeocoder fuzzy-match abbreviations like
+        // "Zulu" to similarly-spelled place names ("Zulia, Venezuela") and
+        // cached the false hit. The sync resolver now prefers the static
+        // alias unconditionally, so those entries are not just unreachable
+        // but wrong — wipe them so the on-disk cache heals itself on next
+        // launch instead of carrying poison across upgrades.
+        let tz = TimezoneBridge()
+        let purged = loaded.filter { key, _ in tz.legacyResolveLocal(key) == nil }
+        self.dynamicCache = purged
+        for (k, v) in purged { Self.synchronousCacheSnapshot.set(k, v) }
+        if purged.count != loaded.count,
+           let data = try? JSONEncoder().encode(purged) {
+            try? data.write(to: cacheURL, options: .atomic)
         }
     }
 
@@ -63,11 +77,22 @@ public actor CityResolver {
 
     /// Async lookup: tries static DB → cache → CLGeocoder. Caches on success
     /// and posts a notification so observers can re-evaluate.
+    ///
+    /// **Never** sends queries that the timezone bridge can resolve via its
+    /// static alias table (UTC, Zulu, Z, CET, PST, …) to CLGeocoder.
+    /// Without the guard, "Zulu" fuzzy-matches to "Zulia, Venezuela" and
+    /// the false hit gets cached on disk — poisoning every subsequent
+    /// "Zulu" lookup permanently. The sync resolver already handles
+    /// these correctly, so the async path returning nil here is harmless.
     @discardableResult
     public func resolve(query raw: String) async -> Resolved? {
         let key = normalize(raw)
         if let hit = AirportDB.lookup(key) { return hit }
         if let hit = dynamicCache[key] { return hit }
+
+        // Guard against CLGeocoder fuzzy-matching well-known abbreviations
+        // to similarly-spelled place names. See doc comment above.
+        if TimezoneBridge().legacyResolveLocal(raw) != nil { return nil }
 
         guard let geo = await geocode(query: raw) else { return nil }
         dynamicCache[key] = geo

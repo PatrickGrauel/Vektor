@@ -73,42 +73,30 @@ public struct TimezoneBridge {
 
     // MARK: - Resolution (sync-only — async resolution kicks off from engine)
 
-    /// Pull from the city resolver's synchronous cache, or fall back to the
-    /// built-in IANA / aliases.
+    /// Resolve a user-typed timezone token. Order matters:
     ///
-    /// For known-ambiguous codes (HKT, IST, CST, PST, BST, etc. — where the
-    /// same letters are both an airport IATA code and a timezone abbreviation)
-    /// the timezone abbreviation wins. Users typing "HKT" mean Hong Kong Time,
-    /// not Phuket airport.
+    /// 1. **Static aliases / IANA ids / abbreviations** (UTC, ZULU, Z, CET,
+    ///    PST, HKT, …) win over everything. A user typing "Zulu" never
+    ///    means Zulia, Venezuela — but CLGeocoder will fuzzy-match it that
+    ///    way and poison the dynamic cache. Checking the static table
+    ///    first means the cache can never override a known abbreviation.
+    /// 2. **CityResolver dynamic cache** (CLGeocoder hits from earlier
+    ///    sessions, plus the bundled static airport / city DB inside the
+    ///    resolver) — for city names like "Munich", "Madeira", "JFK".
+    /// 3. **Legacy fallback** — re-runs the static lookup against `raw`
+    ///    so anything the cache also missed but Foundation's TZ machinery
+    ///    knows about (e.g. raw IANA "Europe/Berlin") still resolves.
     public func resolveSync(_ raw: String) -> CityResolver.Resolved? {
-        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if Self.ambiguousAirportTzCodes.contains(key),
-           let tz = legacyResolveLocal(raw) {
-            return .init(canonicalName: raw.capitalized,
-                         timezoneId: tz.identifier,
-                         originalCode: nil)
-        }
-        if let cached = CityResolver.shared.cached(for: raw) { return cached }
+        // 1. Static aliases / abbreviations always win.
         if let tz = legacyResolveLocal(raw) {
             return .init(canonicalName: raw.capitalized,
                          timezoneId: tz.identifier,
                          originalCode: nil)
         }
+        // 2. Dynamic / static city DB cache (Munich, JFK, etc.).
+        if let cached = CityResolver.shared.cached(for: raw) { return cached }
         return nil
     }
-
-    /// Codes that mean different things as TZ abbreviation vs airport IATA.
-    /// When the user types one of these, prefer the timezone interpretation.
-    private static let ambiguousAirportTzCodes: Set<String> = [
-        "HKT",  // TZ: Hong Kong, IATA: Phuket
-        "IST",  // TZ: India / Israel / Istanbul, IATA: Istanbul SAW (rarely)
-        "CST",  // TZ: US Central / China, not an IATA code
-        "EST",  // TZ: US Eastern, not an IATA code
-        "PST",  // TZ: US Pacific, not an IATA code
-        "BST",  // TZ: British Summer, IATA: Brussels South Charleroi
-        "MST",  // TZ: US Mountain, not an IATA code
-        "ET", "PT", "MT", "CT",
-    ]
 
     /// Legacy fallback: handles raw IANA identifiers and abbreviations
     /// (CET/PST/etc.) that CLGeocoder won't recognize.

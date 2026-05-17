@@ -39,6 +39,36 @@ final class BridgeTests: XCTestCase {
         XCTAssertNotNil(results.first?.value)
     }
 
+    /// Regression: `Zulu` (= UTC) must always win over any cached
+    /// CLGeocoder fuzzy-match. Before the fix, the geocoder mapped
+    /// "Zulu" to "Zulia, Venezuela" (America/Caracas, GMT-4) and the
+    /// false hit poisoned the on-disk cache permanently — so
+    /// `2000 Munich time in Zulu` rendered "14:00 GMT-4" instead of
+    /// "18:00 GMT". Two layers guard the alias now: `resolveSync`
+    /// checks the static table first, and `CityResolver.resolve`
+    /// refuses to send known aliases to CLGeocoder.
+    func testZuluAlwaysResolvesToUTC() async throws {
+        let bridge = TimezoneBridge()
+
+        // Sync path: alias wins immediately.
+        XCTAssertEqual(bridge.resolveSync("Zulu")?.timezoneId, "GMT")
+        XCTAssertEqual(bridge.resolveSync("ZULU")?.timezoneId, "GMT")
+        XCTAssertEqual(bridge.resolveSync("Z")?.timezoneId, "GMT")
+
+        // Async path: must NOT send Zulu to CLGeocoder, so the cache
+        // never picks up Zulia. A nil return is the correct signal —
+        // the sync resolver already handles the value.
+        let attempted = await CityResolver.shared.resolve(query: "Zulu")
+        XCTAssertNil(attempted, "CLGeocoder must not be queried for known aliases")
+        XCTAssertNil(CityResolver.shared.cached(for: "Zulu"),
+                     "cache must stay clean of alias entries")
+
+        // End-to-end: even after the (rejected) poisoning attempt,
+        // the conversion still produces the right UTC result.
+        let out = bridge.convertTimeString("2000", from: "Munich time", to: "Zulu")
+        XCTAssertEqual(out?.formatted.prefix(5), "18:00")
+    }
+
     // MARK: - Aviation bridge through math.js
 
     func testAviationBridgeDensityAltitude() throws {
