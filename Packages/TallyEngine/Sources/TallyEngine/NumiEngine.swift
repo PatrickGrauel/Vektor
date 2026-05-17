@@ -565,8 +565,8 @@ public final class NumiEngine {
                 // For METARs only (not TAF/ATIS), see if we can offer a
                 // wind-based runway suggestion. Appended as a second
                 // visual row right under the raw report. Format:
-                //   expect RWY 26L · Hw 4 · Xc 0
-                //   expect RWY 26L · Hw 15 (G25) · Xc 3 (G5)
+                //   expect RWY 26L · Hw 4 · Xw 0
+                //   expect RWY 26L · Hw 15 (G25) · Xw 3R (G5)
                 if kind == .metar, let advice = Self.runwayWindAdvice(forICAO: icao, metarRaw: cached.raw) {
                     sections.append(Self.formatRunwayAdvice(advice))
                 }
@@ -670,6 +670,13 @@ public final class NumiEngine {
     /// Single-line, dot-separated, with gust components in parens.
     /// `Hw` = headwind, `Xw` = crosswind, `Tw` = tailwind — the `w`
     /// suffix means "wind" so the three are visually parallel.
+    ///
+    /// Crosswind carries an `L` / `R` suffix so the pilot sees which
+    /// side the wind is coming from — `Xw 5R` = 5 kt from the right.
+    /// The suffix is omitted when the crosswind rounds to 0 (perfectly
+    /// aligned wind has no meaningful side). Gust direction in METAR
+    /// is the same as the main wind direction, so the suffix on the
+    /// main value covers the gust too without being repeated.
     static func formatRunwayAdvice(_ a: RunwayWindAdvisor.Advice) -> String {
         let head: String
         if a.isTailwind {
@@ -688,11 +695,12 @@ public final class NumiEngine {
                 head = "Hw \(a.headwindKt)"
             }
         }
+        let side = a.crosswindKt > 0 ? (a.crosswindFromRight ? "R" : "L") : ""
         let cross: String
         if let xg = a.crosswindGustKt {
-            cross = "Xw \(a.crosswindKt) (G\(xg))"
+            cross = "Xw \(a.crosswindKt)\(side) (G\(xg))"
         } else {
-            cross = "Xw \(a.crosswindKt)"
+            cross = "Xw \(a.crosswindKt)\(side)"
         }
         return "expect RWY \(a.designator) · \(head) · \(cross)"
     }

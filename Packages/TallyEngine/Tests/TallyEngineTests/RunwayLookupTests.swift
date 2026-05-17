@@ -97,7 +97,7 @@ final class RunwayLookupTests: XCTestCase {
             headwindGustKt: 24, crosswindGustKt: 8
         )
         let s = NumiEngine.formatRunwayAdvice(advice)
-        XCTAssertEqual(s, "expect RWY 26L · Hw 14 (G24) · Xw 5 (G8)")
+        XCTAssertEqual(s, "expect RWY 26L · Hw 14 (G24) · Xw 5R (G8)")
         XCTAssertFalse(s.contains("Xc"), "must use Xw, not Xc")
     }
 
@@ -109,7 +109,39 @@ final class RunwayLookupTests: XCTestCase {
             headwindGustKt: nil, crosswindGustKt: nil
         )
         let s = NumiEngine.formatRunwayAdvice(advice)
-        XCTAssertEqual(s, "expect RWY 09 · Tw 4 · Xw 2")
+        XCTAssertEqual(s, "expect RWY 09 · Tw 4 · Xw 2L")
+    }
+
+    /// Crosswind from the left → `L` suffix. From the right → `R`.
+    /// Guards against accidentally swapping the convention.
+    func test_formatRunwayAdvice_crosswindSideSuffix() {
+        let fromLeft = RunwayWindAdvisor.Advice(
+            designator: "27", headwindKt: 10, crosswindKt: 4,
+            crosswindFromRight: false, isTailwind: false,
+            headwindGustKt: nil, crosswindGustKt: nil
+        )
+        XCTAssertEqual(NumiEngine.formatRunwayAdvice(fromLeft),
+                       "expect RWY 27 · Hw 10 · Xw 4L")
+
+        let fromRight = RunwayWindAdvisor.Advice(
+            designator: "27", headwindKt: 10, crosswindKt: 4,
+            crosswindFromRight: true, isTailwind: false,
+            headwindGustKt: nil, crosswindGustKt: nil
+        )
+        XCTAssertEqual(NumiEngine.formatRunwayAdvice(fromRight),
+                       "expect RWY 27 · Hw 10 · Xw 4R")
+    }
+
+    /// Crosswind = 0 means perfectly aligned wind — no side suffix,
+    /// otherwise we'd render a meaningless "Xw 0R".
+    func test_formatRunwayAdvice_zeroCrosswindOmitsSide() {
+        let aligned = RunwayWindAdvisor.Advice(
+            designator: "27", headwindKt: 12, crosswindKt: 0,
+            crosswindFromRight: true, isTailwind: false,
+            headwindGustKt: nil, crosswindGustKt: nil
+        )
+        XCTAssertEqual(NumiEngine.formatRunwayAdvice(aligned),
+                       "expect RWY 27 · Hw 12 · Xw 0")
     }
 
     // MARK: - Show the user what EDMA looks like
