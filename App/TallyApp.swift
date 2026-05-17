@@ -16,6 +16,18 @@ struct TallyApp: App {
         // the very first frame.
         KeychainStorage.migrateFromUserDefaults("tally.stocks.fmpApiKey")
         KeychainStorage.migrateFromUserDefaults("tally.fx.openExchangeRatesKey")
+
+        // First-launch default for precision: 2 decimal places, matching
+        // common currency / pilot-friendly display. The engine's own
+        // fallback stays at 14 so tests (which run against a clean
+        // UserDefaults) keep their strip-trailing-zeros behavior — this
+        // migration writes a value once on first launch so end-users see
+        // `4.00` instead of `4` from day one. No-op for users who already
+        // have an explicit value stored (whether they set it themselves
+        // or carried it over from earlier launches).
+        if UserDefaults.standard.object(forKey: "tally.precision") == nil {
+            UserDefaults.standard.set(2, forKey: "tally.precision")
+        }
     }
 
     var body: some Scene {

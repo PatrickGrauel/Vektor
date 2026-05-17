@@ -39,6 +39,19 @@ final class BridgeTests: XCTestCase {
         XCTAssertNotNil(results.first?.value)
     }
 
+    /// Aviation shorthand: a trailing `z` / `Z` on a time token means
+    /// Zulu (UTC). `1400z in Tokyo` should convert 14:00 UTC to Tokyo
+    /// local (23:00 JST, year-round — no DST in Japan).
+    func testZuluSuffixOnTime() throws {
+        let engine = try NumiEngine()
+        for input in ["1400z in Tokyo", "1400Z in Tokyo", "14:00z in Tokyo", "14:00Z in Tokyo"] {
+            let r = engine.evaluate(input)
+            XCTAssertEqual(r.first?.kind, .timezone, "input: \(input)")
+            let value = r.first?.value ?? ""
+            XCTAssertTrue(value.hasPrefix("23:00"), "got '\(value)' for input '\(input)'")
+        }
+    }
+
     /// Regression: `Zulu` (= UTC) must always win over any cached
     /// CLGeocoder fuzzy-match. Before the fix, the geocoder mapped
     /// "Zulu" to "Zulia, Venezuela" (America/Caracas, GMT-4) and the

@@ -5,7 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var model: AppModel
 
     // General
-    @AppStorage("tally.precision")  private var precision: Int = 14
+    @AppStorage("tally.precision")  private var precision: Int = 2
     @AppStorage("tally.appearance") private var appearance: String = "system"
     @AppStorage("tally.menuBarOnly") private var menuBarOnly: Bool = false
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled

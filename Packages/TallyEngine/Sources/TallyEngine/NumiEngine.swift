@@ -275,7 +275,19 @@ public final class NumiEngine {
     ///   any of the above with a trailing "+ N" / "- N[h|hours]" offset
     private func handleTimezoneLine(_ line: String) -> String? {
         // 1. Split off any trailing "+ N hours" / "- 2h" / "+2" offset.
-        let (workingLine, offsetSeconds) = extractTimeOffset(from: line)
+        let (rawWorking, offsetSeconds) = extractTimeOffset(from: line)
+
+        // 1b. Aviation shorthand: a trailing `z`/`Z` on a time token is
+        //     Zulu (UTC). Normalise `1400z` → `1400 Zulu`, `14:00Z` →
+        //     `14:00 Zulu` so the existing time-token regexes match and
+        //     the timezone resolver picks up Zulu as the source TZ.
+        //     Without this, `1400z in Tokyo` falls through to math.js and
+        //     errors out on the unknown identifier `z`.
+        let workingLine = rawWorking.replacingOccurrences(
+            of: #"\b(\d{1,2}:\d{2}|\d{4})[zZ]\b"#,
+            with: "$1 Zulu",
+            options: .regularExpression
+        )
 
         // Conversion form: "X:YY [am|pm] FROM in TO"
         if let conv = parseConversionForm(workingLine) {
