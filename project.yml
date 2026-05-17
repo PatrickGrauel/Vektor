@@ -22,9 +22,6 @@ packages:
     path: Packages/TallyEngine
   TallyAviation:
     path: Packages/TallyAviation
-  MarkdownUI:
-    url: https://github.com/gonzalezreal/swift-markdown-ui
-    from: "2.4.1"
 
 targets:
   Vektor:
@@ -41,8 +38,6 @@ targets:
     dependencies:
       - package: TallyEngine
       - package: TallyAviation
-      - package: MarkdownUI
-        product: MarkdownUI
     info:
       path: App/Resources/Info.plist
       properties:

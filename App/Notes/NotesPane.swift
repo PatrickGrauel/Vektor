@@ -68,10 +68,7 @@ struct NotesPane: View {
     private var editorColumn: some View {
         if let id = selectedID,
            store.saved.contains(where: { $0.id == id }) {
-            NotesEditor(store: store,
-                        noteID: id,
-                        titleIndex: titleIndex,
-                        onOpenNote: { selectedID = $0 })
+            NotesEditor(store: store, noteID: id)
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "note.text")
@@ -106,17 +103,6 @@ struct NotesPane: View {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         let filtered = q.isEmpty ? base : base.filter { $0.body.lowercased().contains(q) }
         return filtered.map(\.id)
-    }
-
-    /// Case-insensitive title → id lookup used by the preview to
-    /// resolve `[[wiki link]]` tokens. Built from all non-trashed notes
-    /// so wiki links can target archived notes too.
-    private var titleIndex: [String: UUID] {
-        var index: [String: UUID] = [:]
-        for note in store.saved where !note.isTrashed {
-            index[note.title.lowercased()] = note.id
-        }
-        return index
     }
 
 }

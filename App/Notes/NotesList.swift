@@ -149,39 +149,69 @@ private struct NotesListRow: View {
     let note: Note
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(note.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(TallyTheme.text)
-                    .lineLimit(1)
-                Spacer()
-                Text(NotesListRow.dateFormatter.localizedString(
-                    for: note.modifiedAt, relativeTo: Date()))
-                    .font(.system(size: 10))
-                    .foregroundStyle(TallyTheme.muted)
-            }
-            if !note.preview.isEmpty {
-                Text(note.preview)
-                    .font(.system(size: 11))
-                    .foregroundStyle(TallyTheme.muted)
-                    .lineLimit(2)
-            }
-            if !note.tags.isEmpty {
-                HStack(spacing: 4) {
-                    ForEach(note.tags.prefix(4), id: \.self) { tag in
-                        Text("#\(tag)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(TallyTheme.accent)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(TallyTheme.accent.opacity(0.10))
-                            .clipShape(Capsule())
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(note.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(TallyTheme.text)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(NotesListRow.dateFormatter.localizedString(
+                        for: note.modifiedAt, relativeTo: Date()))
+                        .font(.system(size: 10))
+                        .foregroundStyle(TallyTheme.muted)
+                }
+                if !note.preview.isEmpty {
+                    Text(strippedPreview)
+                        .font(.system(size: 11))
+                        .foregroundStyle(TallyTheme.muted)
+                        .lineLimit(2)
+                }
+                if !note.tags.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(note.tags.prefix(4), id: \.self) { tag in
+                            Text("#\(tag)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(TallyTheme.accent)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(TallyTheme.accent.opacity(0.10))
+                                .clipShape(Capsule())
+                        }
                     }
                 }
             }
+            if let thumbnail = firstImageThumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
         }
         .padding(.vertical, 4)
+    }
+
+    /// Preview text minus any inline-image markdown — the raw
+    /// `![](notes-asset://...)` tokens are ugly in the snippet and
+    /// the thumbnail on the right already conveys "this note has an
+    /// image."
+    private var strippedPreview: String {
+        let pattern = #"!\[[^\]]*\]\([^)]+\)"#
+        return note.preview
+            .replacingOccurrences(of: pattern, with: "",
+                                  options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// First image attachment referenced by this note, loaded from
+    /// the assets directory. Lazy via the assets resolver.
+    private var firstImageThumbnail: NSImage? {
+        guard let firstName = NotesAssets.referencedAssetNames(in: note.body).first,
+              let url = URL(string: "\(NotesAssets.scheme)://\(firstName)"),
+              let fileURL = NotesAssets.resolve(url) else { return nil }
+        return NSImage(contentsOf: fileURL)
     }
 
     private static let dateFormatter: RelativeDateTimeFormatter = {
