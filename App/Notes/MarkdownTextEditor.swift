@@ -148,13 +148,17 @@ struct MarkdownTextEditor: NSViewRepresentable {
 
             // 2. Block-level rendering.
             applyCodeBlockStyling(storage: storage, source: source)
-            applyBlockquoteStyling(storage: storage, source: source)
+            applyBlockquoteStyling(storage: storage, source: source, caretLine: caretLine)
 
-            // 3. Interactive checkboxes — replace `[ ]` / `[x]` with
-            //    SF Symbol attachments. Done before image attachments
-            //    so the checkbox is processed within the line.
+            // 3. Interactive checkboxes — style `[ ]` / `[x]` as
+            //    distinctive coloured glyphs. We previously tried
+            //    NSTextAttachment here but it only renders in place
+            //    of U+FFFC characters; setting it on regular text
+            //    just hid the bracket without drawing the checkbox.
+            //    Visual styling + click detection keeps the source
+            //    markdown clean and toggles on click via mouseDown.
             for cb in checkboxRanges(in: source) {
-                applyCheckboxAttachment(storage: storage, range: cb.markerRange, checked: cb.checked)
+                applyCheckboxStyle(storage: storage, range: cb.markerRange, checked: cb.checked)
             }
 
             // 4. Inline images.
@@ -380,24 +384,42 @@ struct MarkdownTextEditor: NSViewRepresentable {
         }
 
         /// Blockquotes — lines starting with `> ` get a paragraph style
-        /// with a head indent so the text sits inside a left-bar gutter.
-        /// The bar is drawn by the text storage's background colour on
-        /// the leading 4pt of each line.
-        private func applyBlockquoteStyling(storage: NSTextStorage, source: String) {
+        /// with a head indent so the text sits inside a left-bar
+        /// gutter, plus muted foreground. The `> ` marker itself is
+        /// dimmed (or fully hidden on non-caret lines, same convention
+        /// as the inline syntax markers).
+        private func applyBlockquoteStyling(storage: NSTextStorage,
+                                            source: String,
+                                            caretLine: NSRange) {
             let ns = source as NSString
+            let theme = parent.appearance.theme
             var lineStart = 0
             while lineStart < ns.length {
                 let lineRange = ns.lineRange(for: NSRange(location: lineStart, length: 0))
                 let lineText = ns.substring(with: lineRange)
-                let trimmed = lineText.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("> ") {
+                // Find leading whitespace + `> `.
+                let trimmedLeading = lineText.drop { $0 == " " || $0 == "\t" }
+                let leadingCount = lineText.count - trimmedLeading.count
+                if trimmedLeading.hasPrefix("> ") {
                     let style = NSMutableParagraphStyle()
                     style.headIndent = 16
                     style.firstLineHeadIndent = 16
                     storage.addAttribute(.paragraphStyle, value: style, range: lineRange)
                     storage.addAttribute(.foregroundColor,
-                                         value: NSColor(TallyTheme.muted),
+                                         value: NSColor(theme.muted),
                                          range: lineRange)
+                    // Dim / hide the `> ` marker per cursor-aware rule.
+                    let onCaretLine = NSIntersectionRange(lineRange, caretLine).length > 0
+                    let markerColor: NSColor = onCaretLine
+                        ? NSColor(theme.muted).withAlphaComponent(0.55)
+                        : .clear
+                    let markerRange = NSRange(location: lineRange.location + leadingCount,
+                                              length: 2)
+                    if markerRange.location + markerRange.length <= ns.length {
+                        storage.addAttribute(.foregroundColor,
+                                             value: markerColor,
+                                             range: markerRange)
+                    }
                 }
                 lineStart = lineRange.location + lineRange.length
             }
@@ -430,27 +452,30 @@ struct MarkdownTextEditor: NSViewRepresentable {
                 }
         }
 
-        private func applyCheckboxAttachment(storage: NSTextStorage,
-                                             range: NSRange,
-                                             checked: Bool) {
-            let symbol = checked ? "checkmark.square.fill" : "square"
-            let tint = checked ? NSColor(TallyTheme.accent) : NSColor(TallyTheme.muted)
-            let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-            guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(cfg) else { return }
-            // Tint
-            image.isTemplate = true
-            let tinted = NSImage(size: image.size, flipped: false) { rect in
-                tint.set()
-                rect.fill()
-                image.draw(in: rect, from: .zero,
-                           operation: .destinationIn, fraction: 1.0)
-                return true
-            }
-            let attachment = CheckboxAttachment(checked: checked)
-            attachment.attachmentCell = NSTextAttachmentCell(imageCell: tinted)
-            storage.addAttribute(.attachment, value: attachment, range: range)
-            storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
+        /// Marker attribute used by NotesEditorTextView.mouseDown to
+        /// recognise a click on a checkbox character without having
+        /// to re-scan the source text via regex. The value is the
+        /// boolean `checked` state so the click handler knows which
+        /// direction to toggle in one read.
+        static let checkboxAttributeKey = NSAttributedString.Key("vektor.checkbox")
+
+        private func applyCheckboxStyle(storage: NSTextStorage,
+                                        range: NSRange,
+                                        checked: Bool) {
+            let baseSize = CGFloat(parent.appearance.fontSize)
+            let theme = parent.appearance.theme
+            let tint: NSColor = checked
+                ? NSColor(theme.accent)
+                : NSColor(theme.muted).withAlphaComponent(0.85)
+            // Render the bracket triplet as a single semibold,
+            // slightly-larger monospaced glyph cluster so it reads as
+            // "this is a checkbox" rather than three separate chars.
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: baseSize + 1, weight: .semibold),
+                .foregroundColor: tint,
+                Self.checkboxAttributeKey: checked,
+            ]
+            storage.addAttributes(attrs, range: range)
         }
 
         // MARK: - Inline images
@@ -879,22 +904,6 @@ enum SlashCommand {
     }
 }
 
-/// NSTextAttachment subclass that carries the checkbox state. Used by
-/// the NSTextView's mouseDown handler to find checkbox clicks (the
-/// alternative — pattern-matching the underlying text after a click —
-/// is fragile around layout-manager line-fragment math).
-final class CheckboxAttachment: NSTextAttachment {
-    let checked: Bool
-    init(checked: Bool) {
-        self.checked = checked
-        super.init(data: nil, ofType: nil)
-    }
-    required init?(coder: NSCoder) {
-        self.checked = false
-        super.init(coder: coder)
-    }
-}
-
 /// NSTextView subclass: image-paste interception, list auto-continue,
 /// and checkbox click toggle.
 final class NotesEditorTextView: NSTextView {
@@ -935,8 +944,10 @@ final class NotesEditorTextView: NSTextView {
         super.insertNewline(sender)
     }
 
-    /// Click on a checkbox attachment → toggle its state. Other clicks
-    /// fall through to NSTextView for normal cursor placement.
+    /// Click on a checkbox glyph → toggle its state. Other clicks
+    /// fall through to NSTextView for normal cursor placement. We
+    /// detect the click via the custom `vektor.checkbox` attribute
+    /// the styling pass attaches to every `[ ]` / `[x]` triplet.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let containerOffset = textContainerOrigin
@@ -949,9 +960,10 @@ final class NotesEditorTextView: NSTextView {
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
             if charIndex < (string as NSString).length,
                let storage = textStorage {
-                let attrs = storage.attributes(at: charIndex, effectiveRange: nil)
-                if attrs[.attachment] is CheckboxAttachment {
-                    coordinator?.toggleCheckbox(at: charIndex, in: self)
+                var effective = NSRange()
+                let attrs = storage.attributes(at: charIndex, effectiveRange: &effective)
+                if attrs[MarkdownTextEditor.Coordinator.checkboxAttributeKey] != nil {
+                    coordinator?.toggleCheckbox(at: effective.location, in: self)
                     return
                 }
             }
