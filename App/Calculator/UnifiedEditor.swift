@@ -413,6 +413,35 @@ final class ColumnContainer: NSView {
         gutter.needsDisplay = true
     }
 
+    /// Click-anywhere-to-edit. The NSTextView is `isVerticallyResizable`
+    /// so on an empty document its frame shrinks to the height of a
+    /// single insertion-point row — clicks below that frame fall onto
+    /// the bare ColumnContainer and do nothing. Forwarding them here
+    /// activates the editor and moves the caret to the end of the text,
+    /// matching the expected feel ("the editable surface is the whole
+    /// pane").
+    override func mouseDown(with event: NSEvent) {
+        guard let editor else {
+            super.mouseDown(with: event)
+            return
+        }
+        // Only intercept clicks inside the editor's *column* (left of
+        // the divider), not the gutter — the gutter has its own click
+        // handlers for axis details, send-to-calculator, etc.
+        let p = convert(event.locationInWindow, from: nil)
+        let inEditorColumn = p.x < editorWidth
+        let outsideEditorFrame = !editor.frame.contains(p)
+        if inEditorColumn && outsideEditorFrame {
+            window?.makeFirstResponder(editor)
+            let endLoc = (editor.string as NSString).length
+            editor.setSelectedRange(NSRange(location: endLoc, length: 0))
+            // Scroll caret into view so the user sees it land at the end.
+            editor.scrollRangeToVisible(NSRange(location: endLoc, length: 0))
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
     /// Live drag — fully synchronous per pixel. We deliberately do
     /// NOT call `onEditorWidthChange` here: writing to the SwiftUI
     /// @AppStorage binding triggers a full updateNSView round-trip

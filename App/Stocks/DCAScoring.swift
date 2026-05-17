@@ -18,6 +18,18 @@ struct FMPParsed {
     let symbol: String
     let companyName: String
     let years: [Year]
+    // Hero-badge inputs. All optional because they're sourced from
+    // best-effort endpoints (quote / historical / sector P/E) that can
+    // fail without killing the rest of the analysis.
+    let currentPrice: Double?
+    let priceCurrency: String?
+    let oneMonthChangePct: Double?
+    let peRatio: Double?
+    let sector: String?
+    let exchangeShortName: String?
+    let sectorPE: Double?
+    let isin: String?
+    let cusip: String?
 
     /// Most-recent statement, used for snapshot-style metrics.
     var latest: Year? { years.first }
@@ -86,6 +98,36 @@ enum FMPParser {
     }
     private struct ProfileRow: Decodable {
         let companyName: String?
+        let sector: String?
+        let exchangeShortName: String?
+        let currency: String?
+        let isin: String?
+        let cusip: String?
+    }
+    private struct KeyMetricsRow: Decodable {
+        let peRatio: Double?
+    }
+    private struct QuoteRow: Decodable {
+        let symbol: String?
+        let price: Double?
+        let change: Double?
+    }
+    /// FMP's `historical-price-eod/light` returns either a bare array of
+    /// `{date, price}` rows (newer) or an object with `historical: [...]`
+    /// (older). Both shapes are tried.
+    private struct HistoricalLight: Decodable {
+        let historical: [PriceRow]?
+        struct PriceRow: Decodable {
+            let date: String
+            let price: Double?
+            let close: Double?
+            var bestClose: Double? { close ?? price }
+        }
+    }
+    private struct SectorPERow: Decodable {
+        let sector: String?
+        let exchange: String?
+        let pe: Double?
     }
 
     static func parse(symbol: String, bundle: FMPClient.AnalysisBundle) throws -> FMPParsed {
@@ -94,6 +136,28 @@ enum FMPParser {
         let balance  = try decoder.decode([BalanceRow].self,  from: bundle.balance.json)
         let cashflow = try decoder.decode([CashFlowRow].self, from: bundle.cashFlow.json)
         let profiles = try decoder.decode([ProfileRow].self,  from: bundle.profile.json)
+        // Key-metrics, quote, historical and sector PE are best-effort.
+        // Decode failures fall back to `nil` rather than throwing —
+        // hero badges hide themselves when their data is missing.
+        let keyMetrics: [KeyMetricsRow] = (try? decoder.decode([KeyMetricsRow].self,
+                                                               from: bundle.keyMetrics.json)) ?? []
+        let quoteRows: [QuoteRow] = bundle.quote.flatMap {
+            try? decoder.decode([QuoteRow].self, from: $0.json)
+        } ?? []
+        let historicalRows: [HistoricalLight.PriceRow] = {
+            guard let data = bundle.historical1M?.json else { return [] }
+            if let wrapped = try? decoder.decode(HistoricalLight.self, from: data),
+               let rows = wrapped.historical {
+                return rows
+            }
+            if let flat = try? decoder.decode([HistoricalLight.PriceRow].self, from: data) {
+                return flat
+            }
+            return []
+        }()
+        let sectorPERows: [SectorPERow] = bundle.sectorPE.flatMap {
+            try? decoder.decode([SectorPERow].self, from: $0.json)
+        } ?? []
 
         // Index by fiscal year so we can align across statements.
         func year(_ s: String?, fallbackDate: String) -> Int {
@@ -142,8 +206,48 @@ enum FMPParser {
             throw FMPClient.FMPError.decoding("No aligned statement years for \(symbol).")
         }
 
-        let name = profiles.first?.companyName ?? symbol
-        return FMPParsed(symbol: symbol, companyName: name, years: rows)
+        let profile = profiles.first
+        let name = profile?.companyName ?? symbol
+        let sector = profile?.sector
+        let exchange = profile?.exchangeShortName
+
+        let currentPrice = quoteRows.first?.price
+
+        // Sort by date ascending — FMP's order isn't consistent.
+        let pricesByDate: [(String, Double)] = historicalRows.compactMap {
+            guard let c = $0.bestClose else { return nil }
+            return ($0.date, c)
+        }.sorted { $0.0 < $1.0 }
+        let changePct: Double? = {
+            guard let first = pricesByDate.first?.1,
+                  let last  = pricesByDate.last?.1,
+                  first > 0 else { return nil }
+            return (last - first) / first
+        }()
+
+        let peRatio = keyMetrics.first?.peRatio
+
+        let sectorPE: Double? = {
+            guard let s = sector else { return nil }
+            return sectorPERows.first { row in
+                row.sector?.compare(s, options: .caseInsensitive) == .orderedSame
+            }?.pe
+        }()
+
+        return FMPParsed(
+            symbol: symbol,
+            companyName: name,
+            years: rows,
+            currentPrice: currentPrice,
+            priceCurrency: profile?.currency,
+            oneMonthChangePct: changePct,
+            peRatio: peRatio,
+            sector: sector,
+            exchangeShortName: exchange,
+            sectorPE: sectorPE,
+            isin: profile?.isin,
+            cusip: profile?.cusip
+        )
     }
 }
 
@@ -273,6 +377,13 @@ enum Axis: String, CaseIterable {
     }
 }
 
+/// Fair-value verdict derived from the stock's trailing P/E vs the
+/// average P/E of its sector on the same exchange. Wide ±15% bands so
+/// quarterly EPS wobbles don't flip the chip — sector P/E is coarse.
+enum FairValue {
+    case underpriced, fair, overpriced, unknown
+}
+
 struct DCAScorecard {
     let symbol: String
     let companyName: String
@@ -283,10 +394,42 @@ struct DCAScorecard {
     let fromCache: Bool
     let stale: Bool
     let cacheAgeDays: Int
+    // Hero-badge inputs — surfaced as chips next to the symbol/score.
+    let currentPrice: Double?
+    let priceCurrency: String?
+    let oneMonthChangePct: Double?
+    let peRatio: Double?
+    let sector: String?
+    let sectorPE: Double?
+    let isin: String?
+    let cusip: String?
 
     /// Sum of applicable axes; max is `applicableAxes * 10`.
     var totalScore: Double { axes.compactMap { $0.score }.reduce(0, +) }
     var maxScore: Int { axes.filter { $0.score != nil }.count * 10 }
+
+    /// Fair-value bucket derived from `peRatio / sectorPE`. Returns
+    /// `.unknown` whenever either input is missing or non-positive.
+    var fairValueVerdict: FairValue {
+        guard let pe = peRatio, pe > 0,
+              let sp = sectorPE, sp > 0 else { return .unknown }
+        let ratio = pe / sp
+        if ratio < 0.85 { return .underpriced }
+        if ratio > 1.15 { return .overpriced }
+        return .fair
+    }
+
+    /// German securities identifier (Wertpapierkennnummer). For ISINs
+    /// starting with `DE` the WKN is embedded as the first 6 chars of
+    /// the local identifier by Deutsche Börse convention. For non-DE
+    /// ISINs the WKN is not algorithmically derivable — returns nil.
+    var wkn: String? {
+        guard let isin = isin, isin.hasPrefix("DE"), isin.count == 12 else {
+            return nil
+        }
+        let nsid = isin.dropFirst(2).dropLast(1)   // 9-char national identifier
+        return String(nsid.prefix(6))
+    }
 }
 
 enum DCAScorer {
@@ -327,7 +470,15 @@ enum DCAScorer {
             shape: shape,
             fromCache: bundle.fullyCached,
             stale: bundle.stale,
-            cacheAgeDays: max(0, Int(analysedAt.timeIntervalSince(bundle.oldestFetch) / 86400))
+            cacheAgeDays: max(0, Int(analysedAt.timeIntervalSince(bundle.oldestFetch) / 86400)),
+            currentPrice: p.currentPrice,
+            priceCurrency: p.priceCurrency,
+            oneMonthChangePct: p.oneMonthChangePct,
+            peRatio: p.peRatio,
+            sector: p.sector,
+            sectorPE: p.sectorPE,
+            isin: p.isin,
+            cusip: p.cusip
         )
     }
 

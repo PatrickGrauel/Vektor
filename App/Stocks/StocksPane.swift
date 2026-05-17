@@ -29,6 +29,12 @@ struct StocksPane: View {
     @State private var scorecard: DCAScorecard?
     @State private var budget: FMPClient.BudgetSnapshot?
     @State private var task: Task<Void, Never>?
+    /// Typeahead state — when the user types something more like a
+    /// name than a ticker (e.g. "Tesla") we debounce a fuzzy search
+    /// against FMP and show matches in a popover.
+    @State private var searchHits: [FMPClient.SearchHit] = []
+    @State private var searchTask: Task<Void, Never>?
+    @State private var showSuggestions = false
     /// Manage popover — the in-pane shortcut to the key / plan / usage
     /// view, anchored to the footer status bar.
     @State private var showManage = false
@@ -192,18 +198,27 @@ struct StocksPane: View {
 
     private var inputSection: some View {
         Section {
-            LabeledContent("Ticker") {
+            LabeledContent("Ticker or company") {
                 HStack(spacing: 8) {
-                    TextField("", text: $ticker, prompt: Text("KO"))
-                        .textCase(.uppercase)
+                    TextField("", text: $ticker, prompt: Text("Tesla, KO, AAPL…"))
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 160)
+                        .frame(width: 220)
                         .labelsHidden()
                         .onChange(of: ticker) { _, new in
-                            let upper = new.uppercased()
-                            if upper != new { ticker = upper }
+                            // Don't upper-case on every keystroke any
+                            // more — typeahead needs lowercase queries
+                            // to work ("Tesla" → matches). analyse()
+                            // upper-cases before sending to FMP.
+                            scheduleSearch(query: new)
                         }
                         .onSubmit { analyse() }
+                        .popover(isPresented: $showSuggestions,
+                                 attachmentAnchor: .rect(.bounds),
+                                 arrowEdge: .bottom) {
+                            suggestionsList
+                                .frame(width: 320)
+                                .padding(.vertical, 4)
+                        }
                     Button("Analyze") { analyse() }
                         .keyboardShortcut(.return, modifiers: [])
                         .disabled(ticker.trimmingCharacters(in: .whitespaces).isEmpty || loading)
@@ -305,7 +320,8 @@ struct StocksPane: View {
         // one-liner, and the cache-staleness chip if any. Radar drops to
         // the next section so the verdict is the first thing read.
         Section {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Row 1 — symbol + company name + analysis date.
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(card.symbol)
                         .font(.system(.title, design: .monospaced))
@@ -313,22 +329,58 @@ struct StocksPane: View {
                     Text(card.companyName)
                         .font(.title3)
                         .foregroundStyle(TallyTheme.text)
+                        .lineLimit(1)
                     Spacer()
                     Text("analysed \(card.analysedAt.formatted(date: .numeric, time: .omitted))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                // Row 2 — BIG live price + 1M-change chip, total score on
+                // the right (was the headliner; demoted to make room for
+                // the price answer to "what's it trading at right now?").
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("\(Int(card.totalScore.rounded()))")
-                        .font(.system(size: 44, weight: .semibold, design: .rounded))
-                        .foregroundStyle(TallyTheme.accent)
-                    Text("/ \(card.maxScore)")
-                        .font(.system(.title3, design: .rounded))
-                        .foregroundStyle(.secondary)
+                    if let price = card.currentPrice {
+                        Text(formattedPrice(price, currency: card.priceCurrency))
+                            .font(.system(size: 36, weight: .semibold, design: .rounded))
+                            .foregroundStyle(TallyTheme.text)
+                            .monospacedDigit()
+                        if let change = card.oneMonthChangePct {
+                            ChangeBadge(percent: change)
+                                .padding(.bottom, 4)
+                        }
+                    }
                     Spacer()
-                    Text(card.windowDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text("\(Int(card.totalScore.rounded()))")
+                                .font(.system(size: 28, weight: .semibold, design: .rounded))
+                                .foregroundStyle(TallyTheme.accent)
+                            Text("/ \(card.maxScore)")
+                                .font(.system(.body, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(card.windowDescription)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                // Row 3 — fair-value verdict + securities identifiers.
+                HStack(spacing: 8) {
+                    if card.fairValueVerdict != .unknown {
+                        FairValueBadge(
+                            verdict: card.fairValueVerdict,
+                            peRatio: card.peRatio,
+                            sectorPE: card.sectorPE,
+                            sector: card.sector
+                        )
+                    }
+                    if let wkn = card.wkn {
+                        IdentifierChip(label: "WKN", value: wkn)
+                    }
+                    if let isin = card.isin, !isin.isEmpty {
+                        IdentifierChip(label: "ISIN", value: isin)
+                    }
+                    Spacer()
                 }
                 Text(card.shape)
                     .font(.callout)
@@ -495,8 +547,13 @@ struct StocksPane: View {
 
     private func analyse() {
         task?.cancel()
+        searchTask?.cancel()
+        showSuggestions = false
         let symbol = ticker.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !symbol.isEmpty else { return }
+        // Snap the visible field to the upper-cased symbol so the row
+        // header in the result reads the same as what the user sees.
+        ticker = symbol
         lastTicker = symbol
         recordRecent(symbol)
         analysisError = nil
@@ -558,6 +615,86 @@ struct StocksPane: View {
     private func openURL(_ raw: String) {
         guard let url = URL(string: raw) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - Typeahead
+
+    /// Debounced fuzzy search. Triggers only when input has 2+ chars
+    /// AND looks like something other than a plain ticker (lowercase,
+    /// spaces, or >5 chars) — otherwise it'd fire on every keystroke
+    /// of "AAPL" and burn budget for no benefit.
+    private func scheduleSearch(query: String) {
+        searchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            searchHits = []
+            showSuggestions = false
+            return
+        }
+        let looksLikeTicker = trimmed.count <= 5
+            && trimmed == trimmed.uppercased()
+            && !trimmed.contains(" ")
+        guard !looksLikeTicker else {
+            searchHits = []
+            showSuggestions = false
+            return
+        }
+        searchTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if Task.isCancelled { return }
+            let hits = (try? await FMPClient.shared.searchSymbols(query: trimmed)) ?? []
+            if Task.isCancelled { return }
+            searchHits = hits
+            showSuggestions = !hits.isEmpty
+        }
+    }
+
+    private var suggestionsList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(searchHits) { hit in
+                Button {
+                    ticker = hit.symbol
+                    showSuggestions = false
+                    analyse()
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(hit.symbol)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(TallyTheme.accent)
+                            .frame(width: 70, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(hit.name)
+                                .font(.callout)
+                                .foregroundStyle(TallyTheme.text)
+                                .lineLimit(1)
+                            if let ex = hit.exchange {
+                                Text(ex)
+                                    .font(.caption2)
+                                    .foregroundStyle(TallyTheme.muted)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(TallyTheme.surface)
+            }
+        }
+    }
+
+    /// Locale-respecting currency formatter for the hero's big price.
+    /// Defaults to USD when FMP doesn't return a currency.
+    private func formattedPrice(_ value: Double, currency: String?) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.maximumFractionDigits = 2
+        f.minimumFractionDigits = 2
+        f.currencyCode = (currency?.isEmpty == false) ? currency : "USD"
+        f.locale = Locale(identifier: "en_US")
+        return f.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
     }
 }
 

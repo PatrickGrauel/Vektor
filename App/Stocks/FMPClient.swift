@@ -21,11 +21,15 @@ actor FMPClient {
         case cashFlow             = "cash-flow-statement"
         case keyMetrics           = "key-metrics"
         case profile              = "profile"
+        case quote                = "quote"
+        case historicalPrice1M    = "historical-price-eod/light"
 
         /// How long a cached response is considered fresh. Financial
         /// statements re-issue quarterly at most, so a week is plenty. Key
         /// metrics include market-cap-derived ratios that move daily, but
-        /// they're not used in the DCA scoring path — 24 h is fine.
+        /// they're not used in the DCA scoring path — 24 h is fine. The
+        /// quote endpoint must be cheap to re-call (current price); the
+        /// 30-day historical close window resets daily after market close.
         var ttl: TimeInterval {
             switch self {
             case .incomeStatement, .balanceSheet, .cashFlow:
@@ -34,15 +38,40 @@ actor FMPClient {
                 return 24 * 60 * 60       // 24 hours
             case .profile:
                 return 7 * 24 * 60 * 60   // 7 days
+            case .quote:
+                return 5 * 60             // 5 minutes
+            case .historicalPrice1M:
+                return 24 * 60 * 60       // 24 hours
             }
         }
 
-        /// Whether the endpoint should be requested with `limit=10`.
-        /// The profile endpoint doesn't take a limit; the statements do.
+        /// Whether the endpoint should be requested with `limit=5`.
+        /// Statement endpoints support a row count; profile/quote/historical
+        /// have their own shape (or take a date range instead).
         var supportsLimit: Bool {
             switch self {
-            case .profile: return false
-            default:       return true
+            case .profile, .quote, .historicalPrice1M: return false
+            default:                                    return true
+            }
+        }
+
+        /// Extra query items beyond the standard `symbol` + `apikey`.
+        /// The 1-month historical endpoint needs a `from` date so FMP
+        /// returns only the relevant slice (full history would burn
+        /// daily-bytes budget for no reason).
+        func extraQueryItems(now: Date) -> [URLQueryItem] {
+            switch self {
+            case .historicalPrice1M:
+                // Ask for ~32 days back so we always have at least 21
+                // trading days of coverage even after weekends/holidays.
+                let cal = Calendar(identifier: .gregorian)
+                let from = cal.date(byAdding: .day, value: -32, to: now) ?? now
+                let f = DateFormatter()
+                f.dateFormat = "yyyy-MM-dd"
+                f.timeZone = TimeZone(identifier: "UTC")
+                return [URLQueryItem(name: "from", value: f.string(from: from))]
+            default:
+                return []
             }
         }
     }
@@ -275,8 +304,14 @@ actor FMPClient {
         return Payload(json: data, fetchedAt: now, fromCache: false, stale: false)
     }
 
-    /// Fetch all 5 endpoints required for a DCA analysis in parallel.
-    /// Returns the bundle plus the budget snapshot for the footer line.
+    /// Fetch all endpoints required for a DCA analysis + hero badges in
+    /// parallel. Returns the bundle plus the budget snapshot for the
+    /// footer line.
+    ///
+    /// The hero-badge endpoints (`quote`, `historicalPrice1M`, sector P/E)
+    /// are best-effort: if they fail or aren't on the user's plan, the
+    /// hero just hides the corresponding chip rather than killing the
+    /// whole analysis.
     struct AnalysisBundle {
         let symbol: String
         let income: Payload
@@ -284,9 +319,15 @@ actor FMPClient {
         let cashFlow: Payload
         let keyMetrics: Payload
         let profile: Payload
+        /// Hero-badge payloads — optional because a failure on these is
+        /// non-fatal. The hero card just hides the chip.
+        let quote: Payload?
+        let historical1M: Payload?
+        let sectorPE: Payload?
 
         /// Most pessimistic of the five — if any one slot is stale, the
-        /// whole scorecard should be labelled stale.
+        /// whole scorecard should be labelled stale. Hero-only payloads
+        /// don't count: their staleness gets surfaced via their own chip.
         var stale: Bool {
             income.stale || balance.stale || cashFlow.stale ||
             keyMetrics.stale || profile.stale
@@ -314,22 +355,213 @@ actor FMPClient {
         //
         // On the success path the income response is cached, so the
         // subsequent `async let income` is a cache hit — same total call
-        // count as the parallel-without-probe version (5 calls).
+        // count as the parallel-without-probe version.
         // On the failure path we throw .symbolNotCovered after 1 call
-        // instead of burning 4.
+        // instead of burning 4+.
         let income = try await fetch(.incomeStatement, symbol: upper)
-        async let balance  = fetch(.balanceSheet, symbol: upper)
-        async let cash     = fetch(.cashFlow,     symbol: upper)
-        async let metrics  = fetch(.keyMetrics,   symbol: upper)
-        async let profile  = fetch(.profile,      symbol: upper)
+        async let balance       = fetch(.balanceSheet,     symbol: upper)
+        async let cash          = fetch(.cashFlow,         symbol: upper)
+        async let metrics       = fetch(.keyMetrics,       symbol: upper)
+        async let profile       = fetch(.profile,          symbol: upper)
+        async let quote         = try? fetch(.quote,             symbol: upper)
+        async let historical1M  = try? fetch(.historicalPrice1M, symbol: upper)
+
+        // Profile is the source of the stock's sector + exchange, which
+        // we need to look up the sector P/E. Await it then fan out.
+        let profilePayload = try await profile
+        let parsedProfile = try? ProfileMini.decode(from: profilePayload.json)
+        let sectorPEPayload: Payload?
+        if let exch = parsedProfile?.exchangeShortName, !exch.isEmpty {
+            sectorPEPayload = try? await fetchSectorPE(exchange: exch)
+        } else {
+            sectorPEPayload = nil
+        }
+
         return AnalysisBundle(
             symbol: upper,
             income:     income,
             balance:    try await balance,
             cashFlow:   try await cash,
             keyMetrics: try await metrics,
-            profile:    try await profile
+            profile:    profilePayload,
+            quote:      await quote,
+            historical1M: await historical1M,
+            sectorPE:   sectorPEPayload
         )
+    }
+
+    /// Minimal profile decoder used for the sector-PE follow-up call —
+    /// avoids re-implementing the full profile parser in FMPClient.
+    private struct ProfileMini: Decodable {
+        let sector: String?
+        let exchangeShortName: String?
+        static func decode(from data: Data) throws -> ProfileMini? {
+            let rows = try JSONDecoder().decode([ProfileMini].self, from: data)
+            return rows.first
+        }
+    }
+
+    /// Sector P/E snapshot for a given exchange. FMP returns one row per
+    /// sector on that exchange, so one call covers every stock on that
+    /// exchange. Cached 7 days per exchange — sector multiples are slow-
+    /// moving and don't need fresher data than that.
+    func fetchSectorPE(exchange: String) async throws -> Payload {
+        let cacheKey = "__SECTOR__|\(exchange.uppercased())|sector-pe-snapshot"
+        let ttl: TimeInterval = 7 * 24 * 60 * 60
+        let now = Date()
+
+        rollIfNewDay(now: now)
+
+        if let cached = cache[cacheKey], now.timeIntervalSince(cached.fetchedAt) < ttl {
+            return Payload(json: cached.json, fetchedAt: cached.fetchedAt,
+                           fromCache: true, stale: false)
+        }
+        if isBudgetExhausted {
+            if let cached = cache[cacheKey] {
+                return Payload(json: cached.json, fetchedAt: cached.fetchedAt,
+                               fromCache: true, stale: true)
+            }
+            throw FMPError.rateLimitExhausted
+        }
+        // Lazy Keychain read: same pattern as the main fetch path —
+        // only touch the Keychain when we actually need the value.
+        if (apiKey?.isEmpty ?? true), KeychainStorage.hasKey("tally.stocks.fmpApiKey") {
+            self.apiKey = KeychainStorage.get("tally.stocks.fmpApiKey")
+        }
+        guard let key = apiKey, !key.isEmpty else {
+            throw FMPError.missingAPIKey
+        }
+
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.timeZone = TimeZone(identifier: "UTC")
+        // Use yesterday's date to dodge weekend/holiday gaps in the
+        // upstream snapshot.
+        let cal = Calendar(identifier: .gregorian)
+        let yesterday = cal.date(byAdding: .day, value: -1, to: now) ?? now
+        var comps = URLComponents(string: "\(Self.host)/sector-pe-snapshot")!
+        comps.queryItems = [
+            URLQueryItem(name: "exchange", value: exchange),
+            URLQueryItem(name: "date", value: df.string(from: yesterday)),
+            URLQueryItem(name: "apikey", value: key),
+        ]
+        guard let url = comps.url else {
+            throw FMPError.network("Could not build sector-PE URL.")
+        }
+
+        do {
+            budget.callsToday += 1
+            persistBudget()
+            let (data, response) = try await session.data(from: url)
+            budget.bytesToday += data.count
+            persistBudget()
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                if let cached = cache[cacheKey] {
+                    return Payload(json: cached.json, fetchedAt: cached.fetchedAt,
+                                   fromCache: true, stale: true)
+                }
+                switch http.statusCode {
+                case 401, 403: throw FMPError.invalidAPIKey
+                case 429:      throw FMPError.rateLimitExhausted
+                default:
+                    let body = String(data: data, encoding: .utf8) ?? ""
+                    throw FMPError.http(http.statusCode, body.prefix(200).description)
+                }
+            }
+            if data == Data("[]".utf8) || data.isEmpty {
+                if let cached = cache[cacheKey] {
+                    return Payload(json: cached.json, fetchedAt: cached.fetchedAt,
+                                   fromCache: true, stale: true)
+                }
+                throw FMPError.symbolNotFound("sector-pe \(exchange)")
+            }
+            cache[cacheKey] = CacheEntry(json: data, fetchedAt: now)
+            persistCache()
+            return Payload(json: data, fetchedAt: now, fromCache: false, stale: false)
+        } catch let error as FMPError {
+            throw error
+        } catch {
+            if let cached = cache[cacheKey] {
+                return Payload(json: cached.json, fetchedAt: cached.fetchedAt,
+                               fromCache: true, stale: true)
+            }
+            throw FMPError.network(error.localizedDescription)
+        }
+    }
+
+    /// Fuzzy company-name search. Used by the StocksPane typeahead so
+    /// the user can type "Tesla" without knowing TSLA. Returns up to 8
+    /// matches, cached 1 hour per query.
+    struct SearchHit: Identifiable, Equatable {
+        let symbol: String
+        let name: String
+        let exchange: String?
+        let currency: String?
+        var id: String { symbol }
+    }
+
+    func searchSymbols(query: String, limit: Int = 8) async throws -> [SearchHit] {
+        let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanQuery.count >= 2 else { return [] }
+        let cacheKey = "__SEARCH__|\(cleanQuery.lowercased())"
+        let ttl: TimeInterval = 60 * 60
+        let now = Date()
+
+        rollIfNewDay(now: now)
+        if let cached = cache[cacheKey], now.timeIntervalSince(cached.fetchedAt) < ttl {
+            return decodeSearch(cached.json).prefix(limit).map { $0 }
+        }
+        if isBudgetExhausted {
+            if let cached = cache[cacheKey] {
+                return decodeSearch(cached.json).prefix(limit).map { $0 }
+            }
+            return []
+        }
+        if (apiKey?.isEmpty ?? true), KeychainStorage.hasKey("tally.stocks.fmpApiKey") {
+            self.apiKey = KeychainStorage.get("tally.stocks.fmpApiKey")
+        }
+        guard let key = apiKey, !key.isEmpty else { return [] }
+
+        var comps = URLComponents(string: "\(Self.host)/search-name")!
+        comps.queryItems = [
+            URLQueryItem(name: "query", value: cleanQuery),
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "apikey", value: key),
+        ]
+        guard let url = comps.url else { return [] }
+
+        do {
+            budget.callsToday += 1
+            persistBudget()
+            let (data, response) = try await session.data(from: url)
+            budget.bytesToday += data.count
+            persistBudget()
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                return []
+            }
+            cache[cacheKey] = CacheEntry(json: data, fetchedAt: now)
+            persistCache()
+            return decodeSearch(data).prefix(limit).map { $0 }
+        } catch {
+            return []
+        }
+    }
+
+    private func decodeSearch(_ data: Data) -> [SearchHit] {
+        struct Row: Decodable {
+            let symbol: String?
+            let name: String?
+            let exchangeShortName: String?
+            let exchange: String?
+            let currency: String?
+        }
+        let rows = (try? JSONDecoder().decode([Row].self, from: data)) ?? []
+        return rows.compactMap { r in
+            guard let sym = r.symbol, let name = r.name else { return nil }
+            return SearchHit(symbol: sym, name: name,
+                             exchange: r.exchangeShortName ?? r.exchange,
+                             currency: r.currency)
+        }
     }
 
     func budgetSnapshot() -> BudgetSnapshot {
@@ -412,7 +644,7 @@ actor FMPClient {
         self.apiKey = KeychainStorage.get("tally.stocks.fmpApiKey")
     }
 
-    private func makeURL(endpoint: Endpoint, symbol: String, apiKey: String) -> URL {
+    private func makeURL(endpoint: Endpoint, symbol: String, apiKey: String, now: Date = Date()) -> URL {
         var comps = URLComponents(string: "\(Self.host)/\(endpoint.rawValue)")!
         var items: [URLQueryItem] = [
             URLQueryItem(name: "symbol", value: symbol),
@@ -424,6 +656,7 @@ actor FMPClient {
             // tier gives us and flag the shorter window in the rationale.
             items.append(URLQueryItem(name: "limit", value: "5"))
         }
+        items.append(contentsOf: endpoint.extraQueryItems(now: now))
         comps.queryItems = items
         return comps.url!
     }
