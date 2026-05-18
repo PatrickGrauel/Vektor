@@ -23,7 +23,10 @@ let package = Package(
         ),
         .testTarget(
             name: "TallyEngineTests",
-            dependencies: ["TallyEngine"],
+            dependencies: [
+                "TallyEngine",
+                .product(name: "TallyAviation", package: "TallyAviation"),
+            ],
             path: "Tests/TallyEngineTests"
         ),
     ]

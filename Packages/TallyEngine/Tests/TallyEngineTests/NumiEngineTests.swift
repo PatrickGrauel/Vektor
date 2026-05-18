@@ -1,4 +1,5 @@
 import XCTest
+import TallyAviation
 @testable import TallyEngine
 
 @MainActor
@@ -873,6 +874,51 @@ final class NumiEngineTests: XCTestCase {
         let short  = engine.evaluate("brief EDMA").first?.value ?? ""
         XCTAssertEqual(full, short,
                        "brief and briefing must produce equivalent output")
+    }
+
+    // MARK: - Briefing v2: hazard headline + decoded summary
+
+    func testBriefingHazardFlagsGusts() throws {
+        // Gusts ≥ 20kt → "Gusts G…" in the hazard summary.
+        let m = MetarParser.parse("EDMA 121150Z 22008G25KT 10SM SCT020 18/12 A2992")
+        let summary = NumiEngine.briefingHazardSummary(from: m) ?? ""
+        XCTAssertTrue(summary.contains("Gusts G25"),
+                      "expected G25 in hazard summary, got: \(summary)")
+    }
+
+    func testBriefingHazardFlagsThunderstorm() throws {
+        let m = MetarParser.parse("EDMA 121150Z 22010KT 5SM TSRA SCT020CB BKN040 18/12 A2992")
+        let summary = NumiEngine.briefingHazardSummary(from: m) ?? ""
+        XCTAssertTrue(summary.contains("CB") || summary.lowercased().contains("thunder"),
+                      "expected thunderstorm flag, got: \(summary)")
+    }
+
+    func testBriefingHazardFlagsLowCeiling() throws {
+        // OVC003 = overcast at 300 ft = LIFR ceiling.
+        let m = MetarParser.parse("EDMA 121150Z 18012KT 3SM BR OVC003 12/10 A2980")
+        let summary = NumiEngine.briefingHazardSummary(from: m) ?? ""
+        XCTAssertTrue(summary.contains("LIFR") && summary.contains("300"),
+                      "expected LIFR 300 OVC flag, got: \(summary)")
+    }
+
+    func testBriefingHazardClearWeatherReturnsNil() throws {
+        // Calm summer day — should NOT produce a hazard headline.
+        let m = MetarParser.parse("EDMA 121150Z 22005KT 10SM FEW040 24/12 A3005")
+        XCTAssertNil(NumiEngine.briefingHazardSummary(from: m),
+                     "calm weather should produce no hazard headline")
+    }
+
+    func testBriefingDecodedSummaryPlainEnglish() throws {
+        let m = MetarParser.parse("EDMA 121150Z 27015G25KT 10SM FEW020 18/12 A2992")
+        let s = NumiEngine.briefingDecodedSummary(from: m) ?? ""
+        XCTAssertTrue(s.contains("Wind 270°/15kt gust 25kt"),
+                      "expected wind decoded, got: \(s)")
+        XCTAssertTrue(s.contains("Vis 10SM"),
+                      "expected visibility decoded, got: \(s)")
+        XCTAssertTrue(s.contains("Few at 2000ft"),
+                      "expected cloud decoded, got: \(s)")
+        XCTAssertTrue(s.contains("18°C / dew 12°C"),
+                      "expected temperature decoded, got: \(s)")
     }
 
     // MARK: - Stock quotes (live)

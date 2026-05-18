@@ -874,7 +874,14 @@ public final class NumiEngine {
         let da = Atmosphere.densityAltitudeFt(
             pressureAltitudeFt: pa, oatC: oat
         )
-        return "\(icao)  elev \(elev) ft · PA \(Int(pa.rounded())) ft · DA \(Int(da.rounded())) ft"
+        let daDelta = Int(da.rounded()) - elev
+        // Flag a hot-and-high condition: density altitude > 1500ft
+        // above the field translates to noticeable takeoff/climb
+        // performance loss for normally-aspirated piston aircraft.
+        let warning = daDelta >= 1500
+            ? "  ⚠ DA \(daDelta) ft above field — degraded performance"
+            : ""
+        return "\(icao)  elev \(elev) ft · PA \(Int(pa.rounded())) ft · DA \(Int(da.rounded())) ft\(warning)"
     }
 
     /// Recognise `BRIEFING EDMA` / `BRIEF EDMA EDDM …` lines and return
@@ -897,24 +904,46 @@ public final class NumiEngine {
         var tafAge: Int? = nil
 
         for icao in icaos {
-            let metarLine = handleMetarLine("METAR \(icao)")
-            let tafLine   = handleMetarLine("TAF \(icao)")
-            let rwyText   = Self.briefingRunwaySummary(forICAO: icao)
-            let altText   = Self.briefingAltitudeSummary(forICAO: icao)
+            let metarLine  = handleMetarLine("METAR \(icao)")
+            let tafLine    = handleMetarLine("TAF \(icao)")
+            let atisLine   = handleMetarLine("ATIS \(icao)")
+            let rwyText    = Self.briefingRunwaySummary(forICAO: icao)
+            let altText    = Self.briefingAltitudeSummary(forICAO: icao)
+            let hazardLine = Self.briefingHazardSummary(forICAO: icao)
+            let decodedLine = Self.briefingDecodedSummary(forICAO: icao)
+            let sunText    = Self.briefingSunSummary(forICAO: icao)
 
             var block = ""
+            // Hazard headline at the very top so the scary bits hit
+            // the pilot before the raw METAR text drowns them out.
+            if let hz = hazardLine, !hz.isEmpty {
+                block += hz
+            }
             if let m = metarLine {
+                if !block.isEmpty { block += "\n\n" }
                 block += m.value
                 if let t = m.annotation?.tone { tones.append(t) }
+            }
+            if let d = decodedLine, !d.isEmpty {
+                if !block.isEmpty { block += "\n" }
+                block += d
             }
             if let t = tafLine {
                 if !block.isEmpty { block += "\n\n" }
                 block += t.value
                 if let tn = t.annotation?.tone { tones.append(tn) }
             }
+            if let a = atisLine {
+                if !block.isEmpty { block += "\n\n" }
+                block += a.value
+            }
             if let r = rwyText {
                 if !block.isEmpty { block += "\n\n" }
                 block += r
+            }
+            if let s = sunText, !s.isEmpty {
+                if !block.isEmpty { block += "\n\n" }
+                block += s
             }
             if !block.isEmpty { block += "\n\n" }
             block += altText
@@ -985,6 +1014,157 @@ public final class NumiEngine {
         }
         return "RWY \(canonical) " + parts.joined(separator: " · ")
             + (favouredDesignator.map { " — \($0) favoured" } ?? "")
+    }
+
+    /// Cache-reading wrapper used by `handleBriefingLine`. See
+    /// `briefingHazardSummary(from:)` for the pure-logic version
+    /// exposed for unit tests.
+    private static func briefingHazardSummary(forICAO icao: String) -> String? {
+        let canonical = AirportCodeMap.canonicalICAO(from: icao) ?? icao
+        guard let cached = MainActor.assumeIsolated({
+            MetarCacheBridge.shared.cached(kind: .metar, icao: canonical)
+        }) else { return nil }
+        return briefingHazardSummary(from: MetarParser.parse(cached.raw))
+    }
+
+    /// "⚠ Gusts G35 · CB · LIFR 200 OVC · Vis 2SM" — one-line
+    /// hazard headline. Conservative by design: scares the pilot
+    /// only when conditions actually warrant it.
+    static func briefingHazardSummary(from decoded: DecodedMetar) -> String? {
+        var hazards: [String] = []
+
+        // Gusts above 20 kt — significant for light aircraft.
+        if let g = decoded.wind?.gustKt, g >= 20 {
+            hazards.append("Gusts G\(g)")
+        }
+        // Convective: CB, TCU, TS-prefixed weather codes.
+        let cloudConvective = decoded.clouds.contains {
+            $0.type == "CB" || $0.type == "TCU"
+        }
+        let wxConvective = decoded.weather.contains { wx in
+            wx.contains("TS") || wx.contains("CB")
+        }
+        if cloudConvective || wxConvective {
+            hazards.append("CB / thunderstorms")
+        }
+        // Freezing precip — icing risk.
+        if decoded.weather.contains(where: { $0.contains("FZ") }) {
+            hazards.append("Freezing precip")
+        }
+        // Heavy precip — runway contamination, vis hits.
+        if decoded.weather.contains(where: { $0.hasPrefix("+") }) {
+            hazards.append("Heavy precip")
+        }
+        // Low ceiling — BKN/OVC below 500 ft.
+        let lowCeiling = decoded.clouds.first(where: {
+            ($0.cover == .broken || $0.cover == .overcast)
+                && ($0.altitudeFt ?? 9999) < 500
+        })
+        if let lc = lowCeiling, let ft = lc.altitudeFt {
+            hazards.append("LIFR \(ft) \(lc.cover.rawValue)")
+        }
+        // Low visibility — under 3 SM or under 5000 m.
+        if let sm = decoded.visibility?.statuteMiles, sm < 3 {
+            hazards.append(String(format: "Vis %.0fSM", sm))
+        } else if let m = decoded.visibility?.meters, m < 5000 {
+            hazards.append("Vis \(m)m")
+        }
+        guard !hazards.isEmpty else { return nil }
+        return "⚠ " + hazards.joined(separator: " · ")
+    }
+
+    /// Cache-reading wrapper. Pure-logic version below.
+    private static func briefingDecodedSummary(forICAO icao: String) -> String? {
+        let canonical = AirportCodeMap.canonicalICAO(from: icao) ?? icao
+        guard let cached = MainActor.assumeIsolated({
+            MetarCacheBridge.shared.cached(kind: .metar, icao: canonical)
+        }) else { return nil }
+        return briefingDecodedSummary(from: MetarParser.parse(cached.raw))
+    }
+
+    /// Plain-English one-line summary. Sits directly under the raw
+    /// METAR in the briefing so a pilot can scan either form
+    /// without re-parsing.
+    static func briefingDecodedSummary(from decoded: DecodedMetar) -> String? {
+        var parts: [String] = []
+
+        // Wind: direction · speed · gust.
+        if let w = decoded.wind {
+            var s = ""
+            if w.isVariable {
+                s = "Wind variable at \(w.speedKt)kt"
+            } else if let dir = w.fromDeg {
+                s = "Wind \(String(format: "%03d", dir))°/\(w.speedKt)kt"
+            } else {
+                s = "Wind \(w.speedKt)kt"
+            }
+            if let g = w.gustKt { s += " gust \(g)kt" }
+            parts.append(s)
+        }
+        // Visibility.
+        if let v = decoded.visibility {
+            if v.isCAVOK {
+                parts.append("CAVOK")
+            } else if let sm = v.statuteMiles {
+                parts.append(String(format: "Vis %.0fSM", sm))
+            } else if let m = v.meters {
+                parts.append("Vis \(m)m")
+            }
+        }
+        // Clouds: list first 2 layers in human form.
+        let layers = decoded.clouds.prefix(2).compactMap { c -> String? in
+            let coverWord: String
+            switch c.cover {
+            case .few:                 coverWord = "Few"
+            case .scattered:           coverWord = "Scattered"
+            case .broken:              coverWord = "Broken"
+            case .overcast:            coverWord = "Overcast"
+            case .sky_clear, .clear:   return "Sky clear"
+            case .no_significant, .no_clouds: return "No significant cloud"
+            case .vertical_visibility:
+                return c.altitudeFt.map { "Vert vis \($0)ft" } ?? nil
+            }
+            guard let ft = c.altitudeFt else { return coverWord }
+            return "\(coverWord) at \(ft)ft" + (c.type.map { " (\($0))" } ?? "")
+        }
+        if !layers.isEmpty {
+            parts.append(layers.joined(separator: ", "))
+        }
+        // Temp / dewpoint.
+        if let t = decoded.temperatureC {
+            var s = String(format: "%.0f°C", t)
+            if let d = decoded.dewpointC {
+                s += String(format: " / dew %.0f°C", d)
+            }
+            parts.append(s)
+        }
+        // Altimeter.
+        if let alt = decoded.altimeter {
+            if let h = alt.hPa {
+                parts.append("QNH \(Int(h)) hPa")
+            } else if let i = alt.inHg {
+                parts.append(String(format: "QNH %.2f inHg", i))
+            }
+        }
+        guard !parts.isEmpty else { return nil }
+        return "  " + parts.joined(separator: " · ")
+    }
+
+    /// One-line sun-times summary for a briefing. Delegates to
+    /// `handleSunLine` then strips the leading "SUN icao" header
+    /// (which would be redundant inside a briefing block).
+    private static func briefingSunSummary(forICAO icao: String) -> String? {
+        guard let raw = handleSunLine("sun \(icao)") else { return nil }
+        // handleSunLine returns "SUN EDMA  rise … set … …" possibly
+        // across multiple lines for multi-airport queries. For the
+        // briefing we want a compact one-line representation under a
+        // clear header.
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "Sun " + trimmed.replacingOccurrences(
+            of: #"^SUN\s+[A-Z]{3,4}\s+"#,
+            with: "",
+            options: .regularExpression
+        )
     }
 
     /// One-line altitude summary for a briefing. Same data as
