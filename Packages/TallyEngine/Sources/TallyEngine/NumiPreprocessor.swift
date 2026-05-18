@@ -223,11 +223,29 @@ struct NumiPreprocessor {
     private func rewriteDateMath(_ input: String) -> String {
         var s = input
 
-        s = replaceMatches(in: s, pattern: #"\bdays\s+between\s+(\S+)\s+and\s+(\S+)\b"#) { groups in
+        // `days between X and Y` — supports an optional trailing
+        // ` in <unit>` (weeks / months / years / hours / minutes)
+        // so the Welcome page's `days between today and X in weeks`
+        // actually evaluates instead of falling through to a
+        // mathjs parse error.
+        s = replaceMatches(in: s, pattern: #"\bdays\s+between\s+(\S+)\s+and\s+(\S+)(?:\s+in\s+(weeks?|months?|years?|hours?|minutes?))?\b"#) { groups in
             guard let a = Self.parseDateToken(groups[1]),
                   let b = Self.parseDateToken(groups[2]) else { return nil }
-            let days = Int(round(b.timeIntervalSince(a) / 86400))
-            return String(abs(days))
+            let days = abs(b.timeIntervalSince(a) / 86400)
+            let unit = groups[3].lowercased()
+            let value: Double
+            switch unit {
+            case "weeks", "week":     value = days / 7
+            case "months", "month":   value = days / 30.4375     // mean-month days
+            case "years", "year":     value = days / 365.25
+            case "hours", "hour":     value = days * 24
+            case "minutes", "minute": value = days * 1440
+            default:                  value = days                // raw days
+            }
+            // 1-decimal precision for non-day units; integer for days.
+            return unit.isEmpty
+                ? String(Int(round(value)))
+                : String(format: "%.1f", value)
         }
 
         s = replaceMatches(in: s, pattern: #"\bdays\s+(?:until|to)\s+(\S+)\b"#) { groups in

@@ -235,6 +235,11 @@ public final class NumiEngine {
                 continue
             }
 
+            if let day = Self.handleDateKeywordLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: day, kind: .expression))
+                continue
+            }
+
             let prep = preprocessor.transform(raw, previousValues: previousValues)
             if prep.isLabelOnly {
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .label))
@@ -290,7 +295,33 @@ public final class NumiEngine {
     ///   any of the above with a trailing "+ N" / "- N[h|hours]" offset
     private func handleTimezoneLine(_ line: String) -> String? {
         // 1. Split off any trailing "+ N hours" / "- 2h" / "+2" offset.
-        let (rawWorking, offsetSeconds) = extractTimeOffset(from: line)
+        var (rawWorking, offsetSeconds) = extractTimeOffset(from: line)
+
+        // 1a. Strip a date qualifier (`tomorrow` / `yesterday` /
+        //     `today`) that sits between the time and the source zone:
+        //       "9am tomorrow Berlin in PT" → time-of-day at 9am Berlin,
+        //       shifted forward by one day, then converted to PT.
+        //     We translate the qualifier into a 24-hour offsetSeconds
+        //     delta so the rest of the pipeline (which already knows
+        //     how to apply an offset to the resolved instant) just works.
+        let dayOffsetPattern = #"(?i)\s+(today|tomorrow|yesterday)(?=\s)"#
+        if let re = try? NSRegularExpression(pattern: dayOffsetPattern),
+           let match = re.firstMatch(in: rawWorking,
+                                     range: NSRange(location: 0,
+                                                    length: (rawWorking as NSString).length)) {
+            let token = (rawWorking as NSString).substring(with: match.range(at: 1)).lowercased()
+            let dayDelta: TimeInterval
+            switch token {
+            case "tomorrow":  dayDelta = 86400
+            case "yesterday": dayDelta = -86400
+            default:          dayDelta = 0      // "today" — no-op shift
+            }
+            offsetSeconds += dayDelta
+            rawWorking = (rawWorking as NSString)
+                .replacingCharacters(in: match.range, with: " ")
+                .replacingOccurrences(of: "  ", with: " ")
+                .trimmingCharacters(in: .whitespaces)
+        }
 
         // 1b. Aviation shorthand: a trailing `z`/`Z` on a time token is
         //     Zulu (UTC). Normalise `1400z` → `1400 Zulu`, `14:00Z` →
@@ -1072,6 +1103,80 @@ public final class NumiEngine {
     /// Recognise `sun EDDM` and return SR / SS / civil-twilight-end
     /// for today at that airport. Returns nil if the line doesn't match.
     ///
+    /// Standalone date keywords + `weekday DATE`. Returns formatted
+    /// date strings that math.js can't chew on, so they're handled
+    /// here before the preprocessor gets a chance to mangle them.
+    /// `now` is intentionally NOT handled here — it's already
+    /// captured by the timezone handler which gives a TZ-aware
+    /// formatted current time.
+    ///
+    /// Supported forms:
+    ///   • `today`              → "Mon, 18 May 2026"
+    ///   • `tomorrow`           → "Tue, 19 May 2026"
+    ///   • `yesterday`          → "Sun, 17 May 2026"
+    ///   • `weekday 2026-07-04` → "Saturday"
+    ///   • `weekday today`      → today's weekday name
+    static func handleDateKeywordLine(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces).lowercased()
+        let cal = Calendar(identifier: .gregorian)
+        let now = Date()
+
+        let dateFmt: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "EEE, d MMM yyyy"
+            f.locale = Locale(identifier: "en_US_POSIX")
+            return f
+        }()
+        let weekdayFmt: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "EEEE"
+            f.locale = Locale(identifier: "en_US_POSIX")
+            return f
+        }()
+
+        switch trimmed {
+        case "today":     return dateFmt.string(from: cal.startOfDay(for: now))
+        case "tomorrow":  return dateFmt.string(from: cal.date(byAdding: .day, value: 1, to: now) ?? now)
+        case "yesterday": return dateFmt.string(from: cal.date(byAdding: .day, value: -1, to: now) ?? now)
+        default: break
+        }
+
+        // weekday <date> — accept ISO `yyyy-MM-dd` or any of the
+        // four date keywords as the operand.
+        let weekdayRegex = #"^weekday\s+(\S+)$"#
+        if let re = try? NSRegularExpression(pattern: weekdayRegex, options: [.caseInsensitive]),
+           let m = re.firstMatch(in: line,
+                                 range: NSRange(location: 0, length: (line as NSString).length)),
+           m.numberOfRanges >= 2 {
+            let token = (line as NSString).substring(with: m.range(at: 1))
+            if let date = resolveDateToken(token) {
+                return weekdayFmt.string(from: date)
+            }
+        }
+        return nil
+    }
+
+    /// Same `today` / `tomorrow` / `yesterday` / `yyyy-MM-dd` token
+    /// vocabulary used by NumiPreprocessor.parseDateToken, hoisted
+    /// here so the engine-level handlers can resolve operands
+    /// without duplicating parser logic.
+    private static func resolveDateToken(_ raw: String) -> Date? {
+        let t = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        let cal = Calendar(identifier: .gregorian)
+        let now = Date()
+        switch t {
+        case "today", "now":   return cal.startOfDay(for: now)
+        case "yesterday":      return cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: now))
+        case "tomorrow":       return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now))
+        default:
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = TimeZone(identifier: "UTC")
+            f.dateFormat = "yyyy-MM-dd"
+            return f.date(from: raw)
+        }
+    }
+
     /// Multi-ICAO is supported: `sun EDDM EDMA EDMO` returns one line
     /// per airport so the pilot can compare daylight windows along a
     /// route.

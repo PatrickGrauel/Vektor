@@ -1165,6 +1165,79 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertLessThan(n, 60)
     }
 
+    func testTodayStandalone() throws {
+        // `today` as a standalone line should print a formatted date,
+        // not fall through to a math.js parse error.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("today").first
+        XCTAssertEqual(r?.kind, .expression)
+        let v = r?.value ?? ""
+        XCTAssertFalse(v.isEmpty, "today should return a date string")
+        // Year 20XX appears in the formatted date.
+        XCTAssertTrue(v.contains("20"), "expected a 4-digit year, got: \(v)")
+    }
+
+    func testTomorrowStandalone() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("tomorrow").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertFalse(r?.value?.isEmpty ?? true)
+    }
+
+    func testWeekdayFromIsoDate() throws {
+        // 2026-07-04 was a Saturday.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("weekday 2026-07-04").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertEqual(r?.value, "Saturday")
+    }
+
+    func testWeekdayFromKeyword() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("weekday today").first
+        XCTAssertEqual(r?.kind, .expression)
+        // Should be one of the seven day names.
+        let weekdays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+        XCTAssertTrue(weekdays.contains(r?.value ?? ""),
+                      "expected a weekday name, got: \(r?.value ?? "nil")")
+    }
+
+    func testDaysBetweenInWeeks() throws {
+        // 14 days = 2 weeks exactly. The preprocessor formats as
+        // "2.0" but math.js strips the trailing zero on evaluation —
+        // both "2" and "2.0" are acceptable observable output.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("days between 2024-01-01 and 2024-01-15 in weeks").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertTrue(["2", "2.0"].contains(r?.value ?? ""),
+                      "expected 2 or 2.0, got: \(r?.value ?? "nil")")
+    }
+
+    func testTomorrowQualifiedTimezone() throws {
+        // `1430 tomorrow Berlin in Hong Kong` should parse: 14:30
+        // Berlin time shifted forward by one day, displayed in HKT.
+        // Uses military time + known-good zone names from existing
+        // testMilitaryTimeConversion so the test focuses on the
+        // `tomorrow` qualifier handling, not zone-name resolution.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("1430 tomorrow Berlin in Hong Kong").first
+        XCTAssertEqual(r?.kind, .timezone)
+        let v = r?.value ?? ""
+        XCTAssertFalse(v.isEmpty)
+        XCTAssertTrue(v.range(of: #"\d{1,2}:\d{2}"#, options: .regularExpression) != nil,
+                      "expected an HH:mm in the result, got: \(v)")
+    }
+
+    func testDaysBetweenInMonths() throws {
+        // ~12 months between Jan 1 and Dec 31 of same year.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("days between 2024-01-01 and 2024-12-31 in months").first
+        XCTAssertEqual(r?.kind, .expression)
+        let n = Double(r?.value ?? "") ?? 0
+        XCTAssertGreaterThan(n, 11.5)
+        XCTAssertLessThan(n, 12.5)
+    }
+
     // MARK: - Feet & inches arithmetic
 
     func testFeetInchesAddition() throws {

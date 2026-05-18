@@ -354,7 +354,7 @@ final class DocumentStore: ObservableObject {
         now in Tokyo + 2h                // what time will it be there in 2h?
 
         # Going the other way
-        9am tomorrow Berlin in PT        // when is your 9am Berlin in Pacific?
+        9am tomorrow Berlin in Los Angeles   // when is your 9am Berlin in LA tomorrow?
 
         # See also
         // Date math: @dates. Pilot stuff: @aviation. Back to @welcome.
