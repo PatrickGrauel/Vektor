@@ -52,8 +52,10 @@ struct MarkdownTextEditor: NSViewRepresentable {
         textView.textColor = NSColor(appearance.theme.text)
         textView.insertionPointColor = NSColor(appearance.theme.accent)
 
-        textView.string = text
-        context.coordinator.applyHighlighting(to: textView)
+        // Initial render: parse markdown → attributed string with
+        // atomic-element attachments + inline styling.
+        context.coordinator.renderFullDocument(into: textView,
+                                               markdown: text)
         controller.textView = textView
         return scroll
     }
@@ -61,8 +63,7 @@ struct MarkdownTextEditor: NSViewRepresentable {
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? NotesEditorTextView else { return }
         controller.textView = textView
-        // Keep the chrome in sync with live appearance changes —
-        // theme picker updates re-render through this path.
+        // Keep the chrome in sync with live appearance changes.
         let baseSize = CGFloat(appearance.fontSize)
         let wantFont = appearance.font.baseFont(size: baseSize)
         if textView.font != wantFont {
@@ -71,15 +72,31 @@ struct MarkdownTextEditor: NSViewRepresentable {
         textView.backgroundColor = NSColor(appearance.theme.background)
         textView.textColor = NSColor(appearance.theme.text)
         textView.insertionPointColor = NSColor(appearance.theme.accent)
-        if textView.string != text {
+        // Only re-render when the source has changed from outside our
+        // own write path (note switched, undo, external edit). If the
+        // binding matches what we last serialised, skip — re-rendering
+        // would destroy selection + undo history for no gain.
+        if context.coordinator.lastRenderedSource != text {
             let selected = textView.selectedRanges
-            textView.string = text
-            textView.selectedRanges = selected
+            context.coordinator.renderFullDocument(into: textView,
+                                                   markdown: text)
+            // Try to restore the prior selection. If the text length
+            // changed (atomic-element collapse) selection clamping
+            // keeps us from indexing past end.
+            let length = (textView.string as NSString).length
+            let clamped = selected.compactMap { value -> NSValue? in
+                let r = value.rangeValue
+                let loc = min(r.location, length)
+                let len = min(r.length, length - loc)
+                return NSValue(range: NSRange(location: loc, length: len))
+            }
+            if !clamped.isEmpty { textView.selectedRanges = clamped }
+        } else {
+            // Re-apply inline styling only (theme / font / size
+            // change). Doesn't mutate the storage's character
+            // contents — just attributes.
+            context.coordinator.applyInlineStyling(to: textView)
         }
-        // Re-apply highlighting unconditionally — font and theme
-        // changes don't trigger textDidChange, so the inline styling
-        // pass needs an explicit kick.
-        context.coordinator.applyHighlighting(to: textView)
     }
 
     // MARK: - Coordinator
@@ -90,51 +107,95 @@ struct MarkdownTextEditor: NSViewRepresentable {
         /// re-highlight pass when the user is typing within the same
         /// line (selection changes constantly but the *line* doesn't).
         private var lastCaretLineRange: NSRange = NSRange(location: NSNotFound, length: 0)
+        /// What we last serialised into the @Binding text. Lets
+        /// updateNSView decide whether an incoming text change came
+        /// from outside (re-render needed) vs from our own
+        /// textDidChange path (skip).
+        var lastRenderedSource: String = ""
+        /// Set during our own attributed-string mutations so the
+        /// textDidChange notification doesn't try to re-serialise
+        /// mid-edit (which would create a feedback loop).
+        private var isApplyingProgrammaticEdit = false
 
         init(_ parent: MarkdownTextEditor) { self.parent = parent }
 
+        /// Top-level entry point used by makeNSView + updateNSView
+        /// when the source markdown changes externally. Replaces the
+        /// storage with a freshly-rendered attributed string and then
+        /// runs the inline-styling pass.
+        func renderFullDocument(into tv: NSTextView, markdown: String) {
+            guard let storage = tv.textStorage else { return }
+            let fontSize = CGFloat(parent.appearance.fontSize)
+            let rendered = NotesRenderer.render(markdown: markdown,
+                                                fontSize: fontSize)
+            isApplyingProgrammaticEdit = true
+            storage.beginEditing()
+            storage.setAttributedString(rendered)
+            storage.endEditing()
+            isApplyingProgrammaticEdit = false
+            lastRenderedSource = markdown
+            applyInlineStyling(to: tv)
+        }
+
         func textDidChange(_ notification: Notification) {
-            guard let tv = notification.object as? NSTextView else { return }
-            parent.text = tv.string
-            // Reset the cached line so the next selection change forces
-            // a clean re-paint — text edits can shift line ranges.
+            guard !isApplyingProgrammaticEdit,
+                  let tv = notification.object as? NSTextView,
+                  let storage = tv.textStorage else { return }
+            // Serialise: walk the storage, attachments contribute
+            // their sourceMarkdown, plain chars pass through. Push
+            // into the binding so backup, search, FTS see the
+            // up-to-date source.
+            let markdown = NotesRenderer.serialise(storage: storage)
+            lastRenderedSource = markdown
+            parent.text = markdown
+            // Reset cached caret line so the next selection change
+            // forces a clean re-paint — text edits can shift ranges.
             lastCaretLineRange = NSRange(location: NSNotFound, length: 0)
-            applyHighlighting(to: tv)
+            applyInlineStyling(to: tv)
         }
 
         /// Re-paint when the caret crosses a line boundary — that's the
-        /// trigger for showing / hiding syntax markers.
+        /// trigger for showing / hiding inline syntax markers.
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             let lineRange = caretLineRange(in: tv)
             if !NSEqualRanges(lineRange, lastCaretLineRange) {
                 lastCaretLineRange = lineRange
-                applyHighlighting(to: tv)
+                applyInlineStyling(to: tv)
             }
         }
 
-        /// Apply inline styling. Runs over the full text on every change
-        /// — acceptable for typical note sizes. Two passes: token style,
-        /// then syntax-marker dimming/hiding based on the current line.
-        func applyHighlighting(to tv: NSTextView) {
+        /// Apply inline-only styling (bold, italic, headings,
+        /// hashtags, wiki-links, code, strikethrough, highlight,
+        /// footnotes, fenced code blocks, blockquotes). Atomic
+        /// elements (checkbox / bullet / image / table) are already
+        /// represented as NSTextAttachments in storage — the renderer
+        /// handles them; the inline pass only walks plain-text ranges.
+        func applyInlineStyling(to tv: NSTextView) {
             guard let storage = tv.textStorage else { return }
             let full = NSRange(location: 0, length: (tv.string as NSString).length)
+            isApplyingProgrammaticEdit = true
             storage.beginEditing()
-            // Base attributes — reset every run so we don't accumulate
-            // stale styles from removed tokens. Font + colour come
-            // from the live appearance settings.
+            // Reset attributes on plain-text ranges only, leaving
+            // attachment ranges untouched (their styling is owned by
+            // the NSTextAttachment subclass).
             let baseSize = CGFloat(parent.appearance.fontSize)
             let baseFont = parent.appearance.font.baseFont(size: baseSize)
             let base: [NSAttributedString.Key: Any] = [
                 .font: baseFont,
                 .foregroundColor: NSColor(parent.appearance.theme.text),
             ]
-            storage.setAttributes(base, range: full)
+            forEachPlainTextRange(in: storage, full: full) { range in
+                storage.setAttributes(base, range: range)
+            }
 
             let caretLine = caretLineRange(in: tv)
             let source = tv.string
 
-            // 1. Token styling — bold, italic, headings, etc.
+            // 1. Inline token styling — bold, italic, headings, etc.
+            //    NoteTokenizer matches on actual characters, so the
+            //    U+FFFC attachment placeholders never trigger a
+            //    spurious match.
             for (range, kind) in NoteTokenizer.highlightRanges(in: source) {
                 guard range.location >= 0,
                       range.location + range.length <= full.length else { continue }
@@ -146,44 +207,37 @@ struct MarkdownTextEditor: NSViewRepresentable {
                                          caretLine: caretLine)
             }
 
-            // 2. Block-level rendering.
+            // 2. Block-level styling (code blocks + blockquotes
+            //    that didn't get captured by atomic-element passes).
             applyCodeBlockStyling(storage: storage, source: source)
             applyBlockquoteStyling(storage: storage, source: source, caretLine: caretLine)
 
-            // 3. Interactive checkboxes — style `[ ]` / `[x]` as
-            //    distinctive coloured glyphs. We previously tried
-            //    NSTextAttachment here but it only renders in place
-            //    of U+FFFC characters; setting it on regular text
-            //    just hid the bracket without drawing the checkbox.
-            //    Visual styling + click detection keeps the source
-            //    markdown clean and toggles on click via mouseDown.
-            for cb in checkboxRanges(in: source) {
-                applyCheckboxStyle(storage: storage, range: cb.markerRange, checked: cb.checked)
-            }
-
-            // 4. Bullet markers — hide the literal `-` / `*` / `+`
-            //    char on plain bullet lines so the drawRect overlay
-            //    can paint a real `•` glyph in its place.
-            for bulletRange in bulletMarkerRanges(in: source) {
-                storage.addAttribute(.foregroundColor, value: NSColor.clear, range: bulletRange)
-                storage.addAttribute(Self.bulletAttributeKey, value: true, range: bulletRange)
-            }
-
-            // 5. Tables — when we detect a markdown table block,
-            //    parse the cells and stash the structure under a
-            //    custom attribute over the full block range. The
-            //    drawRect overlay reads the attribute and draws a
-            //    real table on top of the (hidden) source text.
-            for table in tableBlockRanges(in: source) {
-                storage.addAttribute(.foregroundColor, value: NSColor.clear, range: table.range)
-                storage.addAttribute(Self.tableAttributeKey, value: table.data, range: table.range)
-            }
-
-            // 4. Inline images.
-            for imageRange in inlineImageRanges(in: source) {
-                applyImageAttachment(storage: storage, range: imageRange, source: source)
-            }
             storage.endEditing()
+            isApplyingProgrammaticEdit = false
+        }
+
+        /// Enumerate the maximal sub-ranges of `full` that contain no
+        /// attachment characters. Used by the styling pass so we
+        /// don't blow away an attachment's run via setAttributes.
+        private func forEachPlainTextRange(in storage: NSAttributedString,
+                                           full: NSRange,
+                                           body: (NSRange) -> Void) {
+            let ns = storage.string as NSString
+            var rangeStart = full.location
+            var i = full.location
+            let end = full.location + full.length
+            while i < end {
+                if ns.character(at: i) == 0xFFFC {
+                    if i > rangeStart {
+                        body(NSRange(location: rangeStart, length: i - rangeStart))
+                    }
+                    rangeStart = i + 1
+                }
+                i += 1
+            }
+            if rangeStart < end {
+                body(NSRange(location: rangeStart, length: end - rangeStart))
+            }
         }
 
         // MARK: - Caret tracking
@@ -443,223 +497,16 @@ struct MarkdownTextEditor: NSViewRepresentable {
             }
         }
 
-        // MARK: - Checkboxes
-
-        private struct CheckboxToken {
-            let markerRange: NSRange   // covers exactly `[ ]` or `[x]`
-            let checked: Bool
-        }
-
-        // MARK: - Bullets
-
-        /// 1-char ranges covering every plain-bullet marker (`-` /
-        /// `*` / `+`) at the start of a line. Excludes checkbox lines
-        /// (those are caught by `checkboxRanges` and rendered by the
-        /// checkbox overlay) and numbered-list items.
-        private func bulletMarkerRanges(in source: String) -> [NSRange] {
-            // Match the marker char *only* — the regex's lookahead
-            // requires a following space + something that isn't `[`
-            // (so we don't double-process the `-` of a checkbox line).
-            let pattern = #"(?m)^[ \t]*([-*+])(?= (?!\[))"#
-            let ns = source as NSString
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-            return regex.matches(in: source,
-                                 range: NSRange(location: 0, length: ns.length))
-                .compactMap { m in m.numberOfRanges >= 2 ? m.range(at: 1) : nil }
-        }
-
-        // MARK: - Tables
-
-        /// Minimal parsed representation of a markdown pipe-table.
-        /// Kept here (not in the tokenizer) because nothing else
-        /// needs to know about table structure.
-        struct TableData {
-            var headers: [String]
-            var rows: [[String]]
-        }
-
-        private struct TableBlock {
-            let range: NSRange
-            let data: TableData
-        }
-
-        /// Scan the source for markdown table blocks. A block is a
-        /// run of consecutive non-empty `|...|` lines that includes
-        /// a separator line (`|---|---|`). Returns the source-range
-        /// of every block plus the parsed `TableData`.
-        private func tableBlockRanges(in source: String) -> [TableBlock] {
-            let ns = source as NSString
-            var results: [TableBlock] = []
-            var i = 0
-            while i < ns.length {
-                let lineRange = ns.lineRange(for: NSRange(location: i, length: 0))
-                let lineText = ns.substring(with: lineRange)
-                let trimmed = lineText.trimmingCharacters(in: .whitespacesAndNewlines)
-                // A table candidate starts with `|` and ends with `|`.
-                if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
-                    // Gather every consecutive `|...|` line.
-                    var blockEnd = lineRange.location + lineRange.length
-                    var lines: [String] = [trimmed]
-                    var cursor = blockEnd
-                    while cursor < ns.length {
-                        let nextRange = ns.lineRange(for: NSRange(location: cursor, length: 0))
-                        let nextText = ns.substring(with: nextRange).trimmingCharacters(in: .whitespacesAndNewlines)
-                        if nextText.hasPrefix("|") && nextText.hasSuffix("|") {
-                            lines.append(nextText)
-                            blockEnd = nextRange.location + nextRange.length
-                            cursor = blockEnd
-                        } else {
-                            break
-                        }
-                    }
-                    // A real table has ≥ 3 lines (header / separator
-                    // / one or more data rows) AND a separator line.
-                    let separatorIdx = lines.firstIndex {
-                        // Match `|---|---|` (allow trailing spaces
-                        // and alignment colons).
-                        let inner = $0.dropFirst().dropLast()
-                        let cells = inner.split(separator: "|", omittingEmptySubsequences: false)
-                        return !cells.isEmpty && cells.allSatisfy { cell in
-                            let t = cell.trimmingCharacters(in: .whitespaces)
-                            return !t.isEmpty && t.allSatisfy { $0 == "-" || $0 == ":" }
-                        }
-                    }
-                    if lines.count >= 2, let sepIdx = separatorIdx, sepIdx >= 1 {
-                        let parsed = parseTable(lines: lines, separatorIndex: sepIdx)
-                        // Block range: from start of first line to
-                        // end of last (excluding trailing newline so
-                        // the next paragraph isn't part of the hidden
-                        // region).
-                        var endIdx = blockEnd
-                        if endIdx > lineRange.location,
-                           ns.character(at: endIdx - 1) == UInt16(("\n" as Character).asciiValue!) {
-                            endIdx -= 1
-                        }
-                        results.append(TableBlock(
-                            range: NSRange(location: lineRange.location,
-                                           length: endIdx - lineRange.location),
-                            data: parsed
-                        ))
-                        i = blockEnd
-                        continue
-                    }
-                }
-                i = lineRange.location + lineRange.length
-            }
-            return results
-        }
-
-        private func parseTable(lines: [String], separatorIndex: Int) -> TableData {
-            func cells(_ line: String) -> [String] {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                // Strip leading + trailing `|`, split, trim each cell.
-                let inner = trimmed
-                    .dropFirst(trimmed.hasPrefix("|") ? 1 : 0)
-                    .dropLast(trimmed.hasSuffix("|") ? 1 : 0)
-                return inner
-                    .split(separator: "|", omittingEmptySubsequences: false)
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-            }
-            let headers = separatorIndex >= 1 ? cells(lines[separatorIndex - 1]) : []
-            let dataLines = (separatorIndex + 1) < lines.count
-                ? Array(lines[(separatorIndex + 1)...]) : []
-            let rows = dataLines.map(cells)
-            return TableData(headers: headers, rows: rows)
-        }
-
-        private func checkboxRanges(in source: String) -> [CheckboxToken] {
-            // Match `- [ ]` / `- [x]` / `* [ ]` / `* [x]` at start of
-            // line (allowing indent). The captured group is the box.
-            let pattern = #"(?m)^[ \t]*[-*][ \t]+\[( |x|X)\]"#
-            let ns = source as NSString
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-            return regex.matches(in: source, range: NSRange(location: 0, length: ns.length))
-                .compactMap { m in
-                    guard m.numberOfRanges >= 2 else { return nil }
-                    // m.range(at: 0) is the whole prefix incl. dash;
-                    // we want just `[ ]` / `[x]`.
-                    let fullRange = m.range(at: 0)
-                    let innerRange = m.range(at: 1)
-                    let boxRange = NSRange(location: innerRange.location - 1, length: 3)
-                    let mark = ns.substring(with: innerRange).lowercased()
-                    _ = fullRange
-                    return CheckboxToken(markerRange: boxRange, checked: mark == "x")
-                }
-        }
-
-        /// Marker attribute used by NotesEditorTextView.mouseDown to
-        /// recognise a click on a checkbox character without having
-        /// to re-scan the source text via regex. The value is the
-        /// boolean `checked` state so the click handler knows which
-        /// direction to toggle in one read.
-        static let checkboxAttributeKey = NSAttributedString.Key("vektor.checkbox")
-
-        /// Plain-bullet marker (`-` / `*` / `+` at line start). The
-        /// drawRect overlay paints a `•` glyph in the space the
-        /// hidden character occupies. Value is unused — presence is
-        /// the signal.
-        static let bulletAttributeKey = NSAttributedString.Key("vektor.bullet")
-
-        /// Markdown-table block. Value is the parsed `TableData`
-        /// the drawRect overlay uses to render real cell borders +
-        /// per-cell text in place of the hidden source markdown.
-        static let tableAttributeKey = NSAttributedString.Key("vektor.table")
-
-        private func applyCheckboxStyle(storage: NSTextStorage,
-                                        range: NSRange,
-                                        checked: Bool) {
-            // Hide the literal `[ ]` / `[x]` characters — the
-            // NotesEditorTextView.draw override paints a real SF
-            // Symbol checkbox on top of the (still-laid-out) range.
-            // The `vektor.checkbox` attribute carries the state so
-            // the overlay knows which icon to render and the
-            // mouseDown handler knows where to toggle.
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.clear,
-                Self.checkboxAttributeKey: checked,
-            ]
-            storage.addAttributes(attrs, range: range)
-        }
-
-        // MARK: - Inline images
-
-        private func inlineImageRanges(in source: String) -> [NSRange] {
-            let pattern = #"!\[[^\]]*\]\(notes-asset://[^)]+\)"#
-            let ns = source as NSString
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-            return regex.matches(in: source, range: NSRange(location: 0, length: ns.length))
-                .map { $0.range }
-        }
-
-        private func applyImageAttachment(storage: NSTextStorage,
-                                          range: NSRange,
-                                          source: String) {
-            let ns = source as NSString
-            let span = ns.substring(with: range)
-            guard let urlMatch = span.range(of: #"notes-asset://[^)]+"#,
-                                            options: .regularExpression) else { return }
-            let urlString = String(span[urlMatch])
-            guard let url = URL(string: urlString),
-                  let fileURL = NotesAssets.resolve(url),
-                  let nsImage = NSImage(contentsOf: fileURL) else { return }
-
-            let maxWidth: CGFloat = 360
-            let originalSize = nsImage.size
-            let scale = min(1.0, maxWidth / max(originalSize.width, 1))
-            let display = NSSize(width: originalSize.width * scale,
-                                 height: originalSize.height * scale)
-
-            let resized = NSImage(size: display)
-            resized.lockFocus()
-            nsImage.draw(in: NSRect(origin: .zero, size: display),
-                         from: NSRect(origin: .zero, size: originalSize),
-                         operation: .sourceOver, fraction: 1.0)
-            resized.unlockFocus()
-
-            let attachment = NSTextAttachment()
-            attachment.attachmentCell = NSTextAttachmentCell(imageCell: resized)
-            storage.addAttribute(.attachment, value: attachment, range: range)
-            storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
+        /// Round-trip the current storage back to markdown and push
+        /// into the @Binding text. Called when an attachment mutates
+        /// in place (e.g. checkbox toggle) — the storage's character
+        /// contents don't change, so textDidChange doesn't fire, but
+        /// the serialised markdown does.
+        func syncBindingFromStorage(in tv: NSTextView) {
+            guard let storage = tv.textStorage else { return }
+            let markdown = NotesRenderer.serialise(storage: storage)
+            lastRenderedSource = markdown
+            parent.text = markdown
         }
 
         // MARK: - Autocomplete (hashtags + wiki-links)
@@ -815,15 +662,24 @@ struct MarkdownTextEditor: NSViewRepresentable {
             guard let image else { return false }
             do {
                 let assetURL = try NotesAssets.saveImage(image)
-                let snippet = "![](\(assetURL.absoluteString))"
+                // Insert the image as a real attachment at the
+                // caret. The attachment knows its sourceMarkdown so
+                // the storage→markdown serialiser produces a clean
+                // `![](notes-asset://...)` token on save.
+                let attachment = InlineImageAttachment(
+                    assetURLString: assetURL.absoluteString,
+                    altText: "",
+                    maxWidth: 360)
+                let attachmentString = NSAttributedString(attachment: attachment)
                 let selected = textView.selectedRange()
-                let ns = textView.string as NSString
-                let replaced = ns.replacingCharacters(in: selected, with: snippet)
-                textView.string = replaced
-                let newLoc = selected.location + (snippet as NSString).length
-                textView.selectedRange = NSRange(location: newLoc, length: 0)
-                parent.text = replaced
-                applyHighlighting(to: textView)
+                if textView.shouldChangeText(in: selected,
+                                             replacementString: attachmentString.string) {
+                    textView.textStorage?.replaceCharacters(in: selected,
+                                                             with: attachmentString)
+                    textView.didChangeText()
+                    let newLoc = selected.location + 1
+                    textView.selectedRange = NSRange(location: newLoc, length: 0)
+                }
                 return true
             } catch {
                 return false
@@ -982,25 +838,9 @@ struct MarkdownTextEditor: NSViewRepresentable {
             return prefix
         }
 
-        // MARK: - Checkbox click handling
-
-        /// Toggle the checkbox at the given character index. Called
-        /// from `NotesEditorTextView.mouseDown(with:)` when the click
-        /// lands on a CheckboxAttachment.
-        func toggleCheckbox(at characterIndex: Int, in textView: NSTextView) {
-            let ns = textView.string as NSString
-            guard characterIndex >= 0, characterIndex + 3 <= ns.length else { return }
-            let range = NSRange(location: characterIndex, length: 3)
-            let current = ns.substring(with: range).lowercased()
-            let replacement: String
-            if current == "[ ]"        { replacement = "[x]" }
-            else if current == "[x]"   { replacement = "[ ]" }
-            else { return }
-            if textView.shouldChangeText(in: range, replacementString: replacement) {
-                textView.replaceCharacters(in: range, with: replacement)
-                textView.didChangeText()
-            }
-        }
+        // (Checkbox toggle is now handled by the attachment
+        // mutating its `checked` flag in place — see
+        // NotesEditorTextView.mouseDown + syncBindingFromStorage.)
     }
 }
 
@@ -1096,261 +936,41 @@ final class NotesEditorTextView: NSTextView {
         super.insertNewline(sender)
     }
 
-    /// Paint actual checkbox icons on top of every hidden `[ ]` /
-    /// `[x]` range. The underlying text still gets laid out (so the
-    /// caret behaves correctly when navigating through the source
-    /// chars), but the brackets render `.clear` and we draw the
-    /// SF Symbol image in the space they occupy.
-    override func draw(_ rect: NSRect) {
-        super.draw(rect)
-        drawCheckboxOverlays(in: rect)
-        drawBulletOverlays(in: rect)
-        drawTableOverlays(in: rect)
-    }
+    // (Overlay-based drawing for checkbox / bullet / table is gone —
+    // atomic elements are real NSTextAttachments now and render
+    // themselves through the layout manager. See NotesAttachments.swift.)
 
-    // MARK: - Bullet overlay
 
-    private func drawBulletOverlays(in dirtyRect: NSRect) {
-        guard let storage = textStorage,
-              let layoutManager,
-              let textContainer else { return }
-        let origin = textContainerOrigin
-        let baseSize: CGFloat = font?.pointSize ?? 14
-        let fullRange = NSRange(location: 0, length: storage.length)
-        storage.enumerateAttribute(MarkdownTextEditor.Coordinator.bulletAttributeKey,
-                                   in: fullRange) { value, charRange, _ in
-            guard value != nil else { return }
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: charRange,
-                                                      actualCharacterRange: nil)
-            let bounding = layoutManager.boundingRect(forGlyphRange: glyphRange,
-                                                      in: textContainer)
-            let originRect = bounding.offsetBy(dx: origin.x, dy: origin.y)
-            guard originRect.intersects(dirtyRect) else { return }
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: baseSize + 2, weight: .bold),
-                .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-            let glyph = NSAttributedString(string: "•", attributes: attrs)
-            let glyphSize = glyph.size()
-            let drawAt = NSPoint(
-                x: originRect.midX - glyphSize.width / 2,
-                y: originRect.midY - glyphSize.height / 2 - 1
-            )
-            glyph.draw(at: drawAt)
-        }
-    }
-
-    // MARK: - Table overlay
-
-    private func drawTableOverlays(in dirtyRect: NSRect) {
-        guard let storage = textStorage,
-              let layoutManager,
-              let textContainer else { return }
-        let origin = textContainerOrigin
-        let baseSize: CGFloat = font?.pointSize ?? 14
-        let fullRange = NSRange(location: 0, length: storage.length)
-        storage.enumerateAttribute(MarkdownTextEditor.Coordinator.tableAttributeKey,
-                                   in: fullRange) { value, charRange, _ in
-            guard let table = value as? MarkdownTextEditor.Coordinator.TableData else { return }
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: charRange,
-                                                      actualCharacterRange: nil)
-            let bounding = layoutManager.boundingRect(forGlyphRange: glyphRange,
-                                                      in: textContainer)
-            let originRect = bounding.offsetBy(dx: origin.x, dy: origin.y)
-            guard originRect.intersects(dirtyRect) else { return }
-            renderTable(table, in: originRect, baseSize: baseSize)
-        }
-    }
-
-    /// Draw a single markdown table inline. Cell widths are computed
-    /// once from the content (longest cell per column), capped so the
-    /// table never overflows the bounding rect. Header row gets a
-    /// subtle accent-tint background; data rows get a 1-pt cell
-    /// border in the system separator colour.
-    private func renderTable(_ table: MarkdownTextEditor.Coordinator.TableData,
-                             in containerRect: NSRect,
-                             baseSize: CGFloat) {
-        guard !table.headers.isEmpty else { return }
-        let colCount = table.headers.count
-        let cellPadH: CGFloat = 8
-        let cellPadV: CGFloat = 6
-        let rowHeight = baseSize * 1.8
-        let totalRows = 1 + table.rows.count
-        let tableHeight = CGFloat(totalRows) * rowHeight
-        let tableWidth = min(containerRect.width, 720)
-
-        // Compute column widths proportional to longest cell per
-        // column (header or data). Constrains each col to a min/max
-        // so a single very-long cell doesn't push the others to
-        // zero. The remainder splits evenly across non-saturated cols.
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: baseSize - 1)
-        ]
-        let columnWidths: [CGFloat] = {
-            var raw: [CGFloat] = Array(repeating: 0, count: colCount)
-            for c in 0..<colCount {
-                let header = table.headers[safe: c] ?? ""
-                let headerWidth = (header as NSString).size(withAttributes: attrs).width
-                var widest = headerWidth
-                for row in table.rows {
-                    let cell = row[safe: c] ?? ""
-                    let w = (cell as NSString).size(withAttributes: attrs).width
-                    if w > widest { widest = w }
-                }
-                raw[c] = widest + cellPadH * 2
-            }
-            let total = raw.reduce(0, +)
-            if total <= tableWidth { return raw }
-            let scale = tableWidth / total
-            return raw.map { $0 * scale }
-        }()
-
-        // Background (header tint band) + grid lines.
-        let theme = NSAppearance.currentDrawing()
-            .bestMatch(from: [.aqua, .darkAqua]) ?? .aqua
-        let isDark = theme == .darkAqua
-        let borderColor = isDark
-            ? NSColor.white.withAlphaComponent(0.18)
-            : NSColor.black.withAlphaComponent(0.18)
-        let headerTint = NSColor.systemOrange.withAlphaComponent(0.10)
-
-        let tableRect = NSRect(
-            x: containerRect.minX,
-            y: containerRect.minY,
-            width: columnWidths.reduce(0, +),
-            height: tableHeight
-        )
-
-        // Header background.
-        headerTint.setFill()
-        NSRect(x: tableRect.minX, y: tableRect.minY,
-               width: tableRect.width, height: rowHeight).fill()
-
-        // Cell text + vertical separators.
-        for rowIdx in 0..<totalRows {
-            let cellsRow: [String] = rowIdx == 0
-                ? table.headers
-                : (table.rows[safe: rowIdx - 1] ?? [])
-            let isHeader = rowIdx == 0
-            let cellAttrs: [NSAttributedString.Key: Any] = [
-                .font: isHeader
-                    ? NSFont.systemFont(ofSize: baseSize - 1, weight: .semibold)
-                    : NSFont.systemFont(ofSize: baseSize - 1),
-                .foregroundColor: NSColor.labelColor,
-            ]
-            var x = tableRect.minX
-            let y = tableRect.minY + CGFloat(rowIdx) * rowHeight
-            for col in 0..<colCount {
-                let cellW = columnWidths[col]
-                let text = cellsRow[safe: col] ?? ""
-                let textAttr = NSAttributedString(string: text, attributes: cellAttrs)
-                let textSize = textAttr.size()
-                textAttr.draw(at: NSPoint(
-                    x: x + cellPadH,
-                    y: y + (rowHeight - textSize.height) / 2 - 1
-                ))
-                x += cellW
-            }
-        }
-
-        // Outer border + horizontal grid lines.
-        borderColor.setStroke()
-        let path = NSBezierPath()
-        path.lineWidth = 1.0
-        // Outer rectangle.
-        path.appendRect(tableRect)
-        // Row dividers.
-        for r in 1..<totalRows {
-            let y = tableRect.minY + CGFloat(r) * rowHeight
-            path.move(to: NSPoint(x: tableRect.minX, y: y))
-            path.line(to: NSPoint(x: tableRect.maxX, y: y))
-        }
-        // Column dividers.
-        var x = tableRect.minX
-        for col in 0..<(colCount - 1) {
-            x += columnWidths[col]
-            path.move(to: NSPoint(x: x, y: tableRect.minY))
-            path.line(to: NSPoint(x: x, y: tableRect.maxY))
-        }
-        path.stroke()
-    }
-
-    private func drawCheckboxOverlays(in dirtyRect: NSRect) {
-        guard let storage = textStorage,
-              let layoutManager,
-              let textContainer else { return }
-        let origin = textContainerOrigin
-        let fullRange = NSRange(location: 0, length: storage.length)
-        // Match the editor font size so the icon scales with the
-        // user's typography preference.
-        let baseSize: CGFloat = font?.pointSize ?? 14
-        let iconSize = baseSize + 2
-
-        storage.enumerateAttribute(MarkdownTextEditor.Coordinator.checkboxAttributeKey,
-                                   in: fullRange) { value, charRange, _ in
-            guard let checked = value as? Bool else { return }
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: charRange,
-                                                      actualCharacterRange: nil)
-            let bounding = layoutManager.boundingRect(forGlyphRange: glyphRange,
-                                                      in: textContainer)
-            let originRect = bounding.offsetBy(dx: origin.x, dy: origin.y)
-            guard originRect.intersects(dirtyRect) else { return }
-
-            // Vertical-center the icon in the line height. Slight
-            // y-bias upward to align with the visual baseline of the
-            // line so the icon doesn't sit awkwardly low next to text.
-            let y = originRect.midY - iconSize / 2 - 1
-            let drawRect = NSRect(x: originRect.minX,
-                                  y: y,
-                                  width: iconSize,
-                                  height: iconSize)
-
-            let symbolName = checked ? "checkmark.square.fill" : "square"
-            let cfg = NSImage.SymbolConfiguration(pointSize: baseSize, weight: .regular)
-            guard let symbol = NSImage(systemSymbolName: symbolName,
-                                       accessibilityDescription: nil)?
-                    .withSymbolConfiguration(cfg) else { return }
-
-            // Tint via a draw-into-image pass — destinationIn keeps
-            // only the pixels where the symbol is opaque, then we
-            // fill with the desired colour.
-            let tint: NSColor = checked
-                ? NSColor.systemOrange
-                : NSColor.secondaryLabelColor
-            symbol.isTemplate = true
-            let tinted = NSImage(size: symbol.size, flipped: false) { rect in
-                tint.set()
-                rect.fill()
-                symbol.draw(in: rect, from: .zero,
-                            operation: .destinationIn, fraction: 1.0)
-                return true
-            }
-            tinted.draw(in: drawRect)
-        }
-    }
-
-    /// Click on a checkbox glyph → toggle its state. Other clicks
-    /// fall through to NSTextView for normal cursor placement. We
-    /// detect the click via the custom `vektor.checkbox` attribute
-    /// the styling pass attaches to every `[ ]` / `[x]` triplet.
+    /// Click on a checkbox attachment → toggle its `checked` state and
+    /// trigger a redraw. The attachment is mutable; the storage
+    /// observers see the change via `processEditing` on the layout
+    /// manager when we explicitly invalidate display for the
+    /// attachment's range.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let containerOffset = textContainerOrigin
         let inContainer = NSPoint(x: point.x - containerOffset.x,
                                   y: point.y - containerOffset.y)
         if let layoutManager,
-           let textContainer {
+           let textContainer,
+           let storage = textStorage {
             let glyphIndex = layoutManager.glyphIndex(for: inContainer,
                                                      in: textContainer)
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-            if charIndex < (string as NSString).length,
-               let storage = textStorage {
-                var effective = NSRange()
-                let attrs = storage.attributes(at: charIndex, effectiveRange: &effective)
-                if attrs[MarkdownTextEditor.Coordinator.checkboxAttributeKey] != nil {
-                    coordinator?.toggleCheckbox(at: effective.location, in: self)
-                    return
-                }
+            if charIndex < storage.length,
+               let checkbox = storage.attribute(.attachment,
+                                                at: charIndex,
+                                                effectiveRange: nil) as? CheckboxAttachment {
+                checkbox.checked.toggle()
+                // Invalidate the cell so the image is re-pulled.
+                let range = NSRange(location: charIndex, length: 1)
+                layoutManager.invalidateDisplay(forCharacterRange: range)
+                // The storage didn't structurally change, but the
+                // serialised markdown did (`[ ]` ↔ `[x]`). Push the
+                // new source through the binding so backup/FTS pick
+                // it up.
+                coordinator?.syncBindingFromStorage(in: self)
+                return
             }
         }
         super.mouseDown(with: event)
