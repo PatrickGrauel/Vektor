@@ -83,6 +83,7 @@ struct NumiPreprocessor {
         s = rewriteScales(s)
         s = rewritePercentages(s)
         s = rewriteTimeUnits(s)
+        s = rewriteCalculationInTime(s)
         s = rewriteHmsFormat(s)
         s = rewriteInchAmbiguity(s)
         s = rewriteConversion(s)
@@ -445,6 +446,29 @@ struct NumiPreprocessor {
             with: "$1.$2",
             options: .regularExpression
         )
+    }
+
+    // MARK: - <calc> in time → hms((calc) h)
+    //
+    // Aviation use-case: `fuel / consumption in time` — the bare arithmetic
+    // result is interpreted as hours and rendered as `hh:mm:ss`. Distinct
+    // from `rewriteHmsFormat` because the body has no time unit; we attach
+    // `h` ourselves so the existing `hms()` JS helper formats it.
+    //
+    // Guarded by a numeric-only body check so lines like `Munich in time`
+    // (or anything containing letters) fall through untouched, leaving the
+    // timezone / city paths alone.
+    private func rewriteCalculationInTime(_ input: String) -> String {
+        let suffix = #"\s+(?:to|in|as)\s+time\s*$"#
+        guard let r = input.range(of: suffix, options: .regularExpression) else {
+            return input
+        }
+        let body = input[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
+        let allowed = CharacterSet(charactersIn: "0123456789.+-*/()% ")
+        let hasDigit = body.contains(where: { $0.isNumber })
+        let onlyAllowed = body.unicodeScalars.allSatisfy { allowed.contains($0) }
+        guard hasDigit, onlyAllowed else { return input }
+        return "hms((\(body)) h)"
     }
 
     // MARK: - hh:mm:ss / hms output target

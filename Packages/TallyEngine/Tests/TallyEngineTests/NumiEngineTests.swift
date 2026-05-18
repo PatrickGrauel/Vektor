@@ -384,6 +384,39 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertEqual(r?.value, "02:05")
     }
 
+    // MARK: - <calc> in time → hh:mm:ss (bare-number endurance)
+
+    func testCalcInTimeFuelEndurance() throws {
+        // Aviation headline: fuel / fuel-flow gives hours-in-the-air.
+        // 77 / 55 = 1.4 h → 01:24:00.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("77/55 in time").first
+        XCTAssertEqual(r?.value, "01:24:00")
+    }
+
+    func testCalcInTimePlainNumber() throws {
+        // A bare number must also be treated as hours.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("2.5 in time").first
+        XCTAssertEqual(r?.value, "02:30:00")
+    }
+
+    func testCalcInTimeWithSeconds() throws {
+        // 100 / 55 ≈ 1.8181… h → 1h 49m 5s.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("100/55 in time").first
+        XCTAssertEqual(r?.value, "01:49:05")
+    }
+
+    func testCalcInTimeIgnoresTimezone() throws {
+        // `Munich time in Tokyo` is a timezone conversion, not endurance.
+        // The new rewriter must not touch lines whose LHS contains letters.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("1800 Munich time in Tokyo").first?.value ?? ""
+        XCTAssertFalse(r.contains("01:48:00"),
+                       "Timezone line must not be rewritten as duration: \(r)")
+    }
+
     // MARK: - METAR Zulu observation time parsing
 
     func testMetarObservationTimeParsed() {

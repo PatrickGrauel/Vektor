@@ -294,6 +294,17 @@ public final class NumiEngine {
     ///   "<HH:mm[ am/pm]> <FROM_TZ> in <TO_TZ>"
     ///   any of the above with a trailing "+ N" / "- N[h|hours]" offset
     private func handleTimezoneLine(_ line: String) -> String? {
+        // Endurance syntax `<arith expr> in time` → handled by the math
+        // pipeline, not here. Refuse so it falls through to the preprocessor.
+        if let r = line.range(of: #"\s+(?:to|in|as)\s+time\s*$"#,
+                              options: .regularExpression) {
+            let body = line[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
+            let allowed = CharacterSet(charactersIn: "0123456789.+-*/()% ")
+            let hasDigit = body.contains(where: { $0.isNumber })
+            let onlyAllowed = body.unicodeScalars.allSatisfy { allowed.contains($0) }
+            if hasDigit && onlyAllowed { return nil }
+        }
+
         // 1. Split off any trailing "+ N hours" / "- 2h" / "+2" offset.
         var (rawWorking, offsetSeconds) = extractTimeOffset(from: line)
 
