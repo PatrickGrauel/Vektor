@@ -497,6 +497,142 @@ struct MarkdownTextEditor: NSViewRepresentable {
             }
         }
 
+        // MARK: - Slash popover
+
+        /// Owned popover for slash commands. One instance per editor.
+        let slashPopover = SuggestionPopoverController()
+        /// Character index of the `/` that opened the current popover
+        /// session. The query is everything from this+1 to the caret.
+        /// Cleared on popover dismiss or when the caret leaves range.
+        var slashTriggerLocation: Int?
+
+        /// Show the slash popover if the just-typed `/` is at a line
+        /// start or after whitespace (so `http://` etc. don't pop).
+        func maybeShowSlashPopover(in tv: NSTextView) {
+            let ns = tv.string as NSString
+            let caret = tv.selectedRange().location
+            // Caret sits right after the typed `/`. The slash is at
+            // caret-1; require line start OR a whitespace char before.
+            guard caret >= 1 else { return }
+            let slashAt = caret - 1
+            if slashAt > 0 {
+                let prev = ns.character(at: slashAt - 1)
+                let isBoundary = prev == 0x0A || prev == 0x20 || prev == 0x09
+                guard isBoundary else { return }
+            }
+            slashTriggerLocation = slashAt
+            let items = slashItems(filter: "", in: tv)
+            // Anchor: rectangle for the slash glyph in the text view's
+            // coordinate space. The popover positions itself below.
+            let rect = caretRect(in: tv) ?? .zero
+            slashPopover.show(relativeTo: rect, of: tv, items: items)
+        }
+
+        /// Re-filter the popover based on the chars typed since `/`.
+        /// Dismisses the popover if the user backspaced past the `/`
+        /// or typed something that ends the slash context.
+        func refreshSlashPopover(in tv: NSTextView) {
+            guard let slashAt = slashTriggerLocation else {
+                slashPopover.hide()
+                return
+            }
+            let ns = tv.string as NSString
+            let caret = tv.selectedRange().location
+            guard caret > slashAt, slashAt < ns.length else {
+                slashPopover.hide()
+                slashTriggerLocation = nil
+                return
+            }
+            let queryRange = NSRange(location: slashAt + 1,
+                                     length: caret - slashAt - 1)
+            let query = ns.substring(with: queryRange)
+            // Dismiss if the user typed a char that ends the slash
+            // (space, newline) — those commit via the inline path.
+            if query.contains(" ") || query.contains("\n") {
+                slashPopover.hide()
+                slashTriggerLocation = nil
+                return
+            }
+            slashPopover.updateItems(slashItems(filter: query, in: tv))
+        }
+
+        /// Build the full slash-command list, then filter by `query`
+        /// (case-insensitive prefix on the keyword + substring on
+        /// the title). Action: replace the slash+query range with the
+        /// expansion, place the caret at the chosen offset.
+        private func slashItems(filter query: String,
+                                in tv: NSTextView) -> [SuggestionItem] {
+            let all: [(String, String, String, String)] = [
+                ("h1",        "Heading 1",         "Largest heading",          "textformat.size"),
+                ("h2",        "Heading 2",         "Section heading",          "textformat.size"),
+                ("h3",        "Heading 3",         "Sub-section heading",      "textformat.size"),
+                ("list",      "Bulleted list",     "• item",                   "list.bullet"),
+                ("num",       "Numbered list",     "1. item",                  "list.number"),
+                ("todo",      "To-do",             "- [ ] task",               "checkmark.square"),
+                ("quote",     "Block quote",       "> quoted text",            "text.quote"),
+                ("code",      "Code block",        "```\\ncode\\n```",         "chevron.left.forwardslash.chevron.right"),
+                ("divider",   "Divider",           "---",                      "minus"),
+                ("table",     "Table",             "2-column starter table",   "tablecells"),
+            ]
+            let q = query.lowercased()
+            let filtered = q.isEmpty
+                ? all
+                : all.filter { row in
+                    row.0.hasPrefix(q) || row.1.lowercased().contains(q)
+                }
+            return filtered.map { row in
+                let keyword = row.0
+                return SuggestionItem(
+                    id: keyword,
+                    icon: row.3,
+                    title: row.1,
+                    subtitle: "/\(keyword)"
+                ) { [weak self, weak tv] in
+                    guard let self, let tv else { return }
+                    self.commitSlashCommand(keyword: keyword, in: tv)
+                }
+            }
+        }
+
+        /// Replace the `/query` range with the expansion text from
+        /// the existing SlashCommand registry. The popover's
+        /// keyboard-driven commit path lands here.
+        private func commitSlashCommand(keyword: String, in tv: NSTextView) {
+            guard let slashAt = slashTriggerLocation,
+                  let expansion = SlashCommand.expansion(for: keyword) else {
+                slashTriggerLocation = nil
+                return
+            }
+            let ns = tv.string as NSString
+            let caret = tv.selectedRange().location
+            let range = NSRange(location: slashAt,
+                                length: max(0, min(caret, ns.length) - slashAt))
+            if tv.shouldChangeText(in: range, replacementString: expansion.text) {
+                tv.replaceCharacters(in: range, with: expansion.text)
+                tv.didChangeText()
+                let endLoc = slashAt + (expansion.text as NSString).length
+                let caretLoc = endLoc - expansion.caretOffsetFromEnd
+                tv.selectedRange = NSRange(location: caretLoc, length: 0)
+            }
+            slashTriggerLocation = nil
+        }
+
+        /// Caret-position rectangle in `tv`'s coordinate space, used
+        /// to anchor the slash popover just below the typed `/`.
+        private func caretRect(in tv: NSTextView) -> NSRect? {
+            guard let layoutManager = tv.layoutManager,
+                  let textContainer = tv.textContainer else { return nil }
+            let caret = tv.selectedRange().location
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: NSRange(location: max(0, caret - 1), length: 1),
+                actualCharacterRange: nil
+            )
+            let bounding = layoutManager.boundingRect(forGlyphRange: glyphRange,
+                                                      in: textContainer)
+            let origin = tv.textContainerOrigin
+            return bounding.offsetBy(dx: origin.x, dy: origin.y)
+        }
+
         /// Round-trip the current storage back to markdown and push
         /// into the @Binding text. Called when an attachment mutates
         /// in place (e.g. checkbox toggle) — the storage's character
@@ -908,22 +1044,47 @@ final class NotesEditorTextView: NSTextView {
         super.paste(sender)
     }
 
-    /// Trigger slash-command expansion + autocomplete after specific
-    /// characters land. Has to be after `super.insertText` so the
-    /// inserted character is already in the buffer when we scan.
+    /// Trigger slash-command popover + completion autocomplete on
+    /// specific characters. Runs after super.insertText so the
+    /// inserted character is in the buffer when we scan / measure.
     override func insertText(_ string: Any, replacementRange: NSRange) {
         super.insertText(string, replacementRange: replacementRange)
         guard let s = string as? String else { return }
+        if s == "/" {
+            coordinator?.maybeShowSlashPopover(in: self)
+        } else if coordinator?.slashPopover.isShown == true {
+            coordinator?.refreshSlashPopover(in: self)
+        }
         if s == " " {
+            // Keep the inline expansion path too — typing `/h1 ` still
+            // expands if the user dismissed the popover.
             coordinator?.tryExpandSlashCommand(in: self)
         }
         if s == "#" || s == "[" || (s.count == 1 && coordinator?.shouldOfferCompletions(after: s, in: self) == true) {
-            // Auto-trigger the system completion popover when we're
-            // inside a hashtag or wiki-link token. Cheap to call —
-            // NSTextView dismisses immediately if the delegate returns
-            // no completions.
             complete(nil)
         }
+    }
+
+    /// Intercept arrow keys / Return / Escape when the slash popover
+    /// is open so the user can navigate the menu without leaving the
+    /// editor. Falls through to NSTextView's default behaviour when
+    /// the popover is dismissed.
+    override func keyDown(with event: NSEvent) {
+        if let coord = coordinator, coord.slashPopover.isShown {
+            switch event.keyCode {
+            case 125: coord.slashPopover.selectNext();    return     // ↓
+            case 126: coord.slashPopover.selectPrevious(); return    // ↑
+            case 36, 76:                                              // ↵
+                coord.slashPopover.commit()
+                return
+            case 53:                                                  // ⎋
+                coord.slashPopover.hide()
+                coord.slashTriggerLocation = nil
+                return
+            default: break
+            }
+        }
+        super.keyDown(with: event)
     }
 
     /// Return key — let the coordinator decide whether we're in a list
