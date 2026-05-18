@@ -253,156 +253,229 @@ final class DocumentStore: ObservableObject {
 
         let math = TallyDocument(content: """
         # Math
-        // The boring stuff that secretly runs the world.
+        // Arithmetic, variables, and the "prev" trick.
 
+        # The classics
         2 + 2
         8 * (3.5 + 1)
         sqrt(2)
-        sin(45°) ^ 2 + cos(45°) ^ 2     // hi there, Pythagoras
+        sin(45°) ^ 2 + cos(45°) ^ 2     // hello there, Pythagoras
 
-        // prev = the last result. Saves you copy-paste hell.
+        # prev = the last result
+        // Saves you copy-paste hell on multi-step calculations.
         100 / 7
-        prev * 12
+        prev * 12                        // builds on the line above
+        prev + 1                         // and the line above that
 
-        // Variables. Name a number, reuse it forever.
+        # Variables — name a number, reuse it forever
         rent = 1450 EUR
-        rent * 12                       // yearly burn
-        rent * 12 * 30 / 1000           // and over a 30-year career
+        rent * 12                        // a year of rent
+        rent * 12 * 30 / 1000            // a career of rent, in thousands
 
-        // Done? Try @units next, or @welcome for the hub.
+        // Variable names are case-insensitive. Rent and RENT are the same var.
+
+        # Where to next?
+        // Try @units, or jump back to @welcome.
         """, updatedAt: at(-80))
 
         let units = TallyDocument(content: """
         # Units
-        // Vektor's bread and butter. Type a number + a unit, then
-        // "to" or "in" + the unit you want.
+        // Type a number + a unit, then "to" or "in" + the target unit.
+        // Vektor handles everything from kitchens to cockpits.
 
-        120 kt in km/h
-        60000 ft in m
-        29.92 inHg in hPa
-        2 hours in seconds
+        # Speed and length
+        120 kt in km/h                   // pilot speeds
+        60000 ft in m                    // pilot altitudes
+        100 km/h in mph                  // road speeds
+
+        # Pressure, weight, temperature
+        29.92 inHg in hPa                // standard pressure
         180 lbs in kg
         100°F in °C
+        -40°C in °F                      // the temperature where the scales meet
 
-        // Mixed math works too:
+        # Time and energy
+        2 hours in seconds
+        5400 W * 3 hours in kWh          // how much that EV charge actually used
+
+        # Mixed-unit math just works
         (5 km + 800 m) in miles
-        5400 W * 3 hours in kWh
+        1 light year in km               // for perspective
 
-        // Got it? Try @money, @time, or @aviation next.
+        # Next stop
+        // Try @money for currencies, @time for time zones,
+        // or @aviation if knots and inHg are your daily bread.
         """, updatedAt: at(-70))
 
         let money = TallyDocument(content: """
-        # Money — live rates, refreshed quietly in the background
-        // FX is auto-fetched. Crypto too. Stocks need your FMP key
-        // (Settings → Stocks).
+        # Money
+        // Live rates fetched quietly in the background. No clicks,
+        // no refresh buttons. FX from the ECB, crypto from public
+        // exchanges, single stocks from FMP (your key in Settings).
 
+        # Plain FX
         100 EUR in USD
         2500 USD in JPY
         50 GBP in CHF
 
-        // Crypto — same syntax. The market goes up and down.
-        // Vektor stays cool about it.
+        # Mix currencies and math
+        rent = 1450 EUR
+        rent * 12 in USD                 // your annual rent, in dollars
+
+        # Crypto, same syntax
         1 BTC in USD
         0.5 ETH in EUR
 
-        // Live single-stock price:
-        stock AAPL
+        # Live single-stock price
+        stock AAPL                       // needs your FMP key — Settings → Stocks
+        stock MSFT
+        stock KO
 
-        // The full Buffett DCA scorecard for any covered ticker
-        // lives in the Stocks pane. See @stocks.
+        # The deep dive lives elsewhere
+        // The full Buffett scorecard + sector P/E + radar chart
+        // for any covered ticker lives in @stocks (the dedicated pane).
 
-        // Now you know. Back to @welcome.
+        // Back to @welcome.
         """, updatedAt: at(-60))
 
         let time = TallyDocument(content: """
-        # Time — for talking to people in inconvenient hemispheres
-        // Try any city name. Or an ICAO airport code. Or "Zulu".
+        # Time
+        // For people in the wrong hemispheres, on the wrong calendars,
+        // or both.
 
+        # Current time anywhere
         Berlin time
         Tokyo time
-        SFO time                        // IATA works too
-        1430 Zulu in HKT
-        now in Tokyo + 2h               // "what time will it be there in 2h?"
+        SFO time                         // IATA airport codes work too
+        EDDM time                        // ICAO codes work too
 
-        // Going the other way:
-        9am tomorrow Berlin in PT       // when is your 9am their time?
+        # Zulu and conversions
+        1430 Zulu in HKT                 // briefing time → Hong Kong
+        now in Tokyo + 2h                // what time will it be there in 2h?
 
-        // Pilots, see also @aviation. Travelers, see @dates.
+        # Going the other way
+        9am tomorrow Berlin in PT        // when is your 9am Berlin in Pacific?
+
+        # See also
+        // Date math: @dates. Pilot stuff: @aviation. Back to @welcome.
         """, updatedAt: at(-50))
 
         let dates = TallyDocument(content: """
-        # Dates — for procrastinators, parents, project managers
-        // Quick date arithmetic without opening Calendar.
+        # Dates
+        // For procrastinators, parents, and project managers.
 
+        # The basics
         today
         days between today and 2026-12-25
-        age 1990-03-15
-        weekday 2026-07-04
+        age 1990-03-15                   // your age right now, by year
+        weekday 2026-07-04               // what day of the week is the 4th?
 
-        // Stack it with units:
+        # Mix with units
         days between today and 2026-12-25 in weeks
+        days between today and 2026-12-25 in months
 
-        // Time-zone work? @time. Mortgage timeline? @money.
+        # Combine with money
+        deadline = 2026-12-31
+        savings_target = 5000 EUR
+        savings_target / (days between today and deadline)   // EUR per day to hit it
+
+        # Next
+        // Time-zone math: @time. Money: @money. Back: @welcome.
         """, updatedAt: at(-40))
 
         let aviation = TallyDocument(content: """
-        # Aviation — for the pilots in the room
-        // Vektor speaks ICAO and IATA. Multiple stations at once works:
-        // METAR EDDM EDMO LOWS.
+        # Aviation
+        // ICAO and IATA codes both work. Multiple stations on one
+        // line is supported: METAR EDDM EDMO LOWS.
 
-        METAR EDDM                      // Munich, live — and the best runway by wind
-        TAF KSFO                        // 24h forecast
-        ATIS KJFK                       // where the FAA publishes D-ATIS
-        RWY EDDM                        // every runway: length, surface, heading
-        sun EDDM                        // sunrise, sunset, civil twilight today
-        altitude EDDM                   // field · pressure · density altitude
-        briefing EDMA                   // all the above for one ICAO, stacked
+        # Live weather
+        METAR EDDM                       // Munich — also appends best runway by wind
+        TAF KSFO                         // San Francisco 24h forecast
+        ATIS KJFK                        // FAA D-ATIS where published
 
-        // Wind triangles + W&B + E6B live in the Aviation pane.
-        // Back to @welcome.
+        # Runway, sun, altitude
+        RWY EDDM                         // every runway: length, surface, heading
+        sun EDDM                         // sunrise, sunset, civil twilight today
+        altitude EDDM                    // field, pressure, and density altitude
+
+        # The whole briefing in one line
+        briefing EDMA                    // METAR + TAF + ATIS + RWY + sun + altitude
+
+        # Pilot-specific math
+        120 kt in km/h
+        60000 ft in m
+        29.92 inHg in hPa
+        1500 fpm * 5 min in ft           // descent in 5 minutes at 1500 fpm
+
+        # The richer aviation tools
+        // Wind triangles, W&B, E6B all live in the Aviation pane.
+        // Back to @welcome. Or see @stocks for the investing pane.
         """, updatedAt: at(-30))
 
         let stocks = TallyDocument(content: """
         # Stocks
-        // Live single-quote works right here in the calculator:
-        stock AAPL
+        // Two flavours: a single price lookup right here in the
+        // calculator, and a full Buffett-style scorecard in the
+        // dedicated Stocks pane.
+
+        # Right here — live single quotes
+        stock AAPL                       // needs your FMP key (Settings → Stocks)
         stock MSFT
         stock KO
 
-        // For the full scorecard — Buffett's Durable Competitive
-        // Advantage framework, six axes, radar chart, sector P/E
-        // fair-value verdict, 1M chart, the lot — switch to the
-        // Stocks pane (it's a separate module; enable it from
-        // Manage Panes).
+        # The deeper analysis
+        // Switch to the Stocks pane (enable it in Manage Panes if
+        // hidden). You get:
+        //   • Six-axis radar chart of Buffett's DCA framework
+        //   • Live current price + 1-month chart + fair-value chip
+        //     (P/E vs sector average)
+        //   • WKN + ISIN for the German-listed crowd
+        //   • Fuzzy search — type "Tesla" if you don't know TSLA
 
-        // You'll need a free Financial Modeling Prep key (Settings →
-        // Stocks). The free tier covers ~50 analyses/day of major
-        // US-listed tickers.
+        # FMP setup
+        // Free key from financialmodelingprep.com. Free tier covers
+        // ~50 analyses/day of major US-listed tickers. Paid plans
+        // unlock international + history. Settings → Stocks.
 
-        // Back to @welcome. Tips for everything else: @tips.
+        // Tips for everything else: @tips. Back to @welcome.
         """, updatedAt: at(-20))
 
         let tips = TallyDocument(content: """
         # Tips
         // The shortcuts and small touches that make Vektor pleasant.
 
+        # Keyboard
         // ⌘N            — new calculation
         // ⌘L            — show all your calculations
-        // ⌘1 / ⌘2 ...   — switch pane
-        // @page         — click an @reference to jump to that page
-        // Right-click a doc in the list → Pin to keep it on top
+        // ⌘1 / ⌘2 …     — switch pane (in order they appear in the menu)
 
-        // Comments:
-        //   #  …  bold-ish section header
-        //   // …  muted side note (doesn't try to calculate)
+        # In the documents list (⌘L)
+        // Right-click any row → Pin to top, Delete
+        // Search field filters by content (not just title)
 
-        // "prev" always refers to the most recent result. Chains
-        // of math get clean fast:
-        100
-        prev * 0.19
-        prev + 100                      // total incl. VAT, three lines
+        # Syntax cheat-sheet
+        // #  at line start  →  section header (orange)
+        // // at line start  →  full-line comment (muted, no result)
+        // // after a value  →  trailing comment (line still evaluates)
+        // @slug             →  jump link to another page
 
-        // Done? @welcome. Or @math for a refresher.
+        # The "prev" trick
+        // prev refers to the most recent result. Multi-step math
+        // becomes readable:
+        100                              // start with a price
+        prev * 0.19                      // VAT
+        prev + 100                       // total
+
+        # Variables
+        // Name a number once, reuse it. Case-insensitive.
+        principal = 250000 EUR
+        rate = 0.034
+        years = 25
+        principal * rate * years         // simple-interest cost
+
+        # Where to next
+        // Hub: @welcome. Or pick a topic: @math @units @money
+        // @time @dates @aviation @stocks.
         """, updatedAt: at(-10))
 
         // Welcome lives last so it lands at the top of the list and
@@ -410,35 +483,49 @@ final class DocumentStore: ObservableObject {
         // there until they explicitly unpin.
         let welcome = TallyDocument(content: """
         # Welcome to Vektor
-        // Vektor is a calculator that thinks too much. It does the
-        // boring math. It also does units, currencies, time zones,
-        // dates, METARs, runways, stock quotes — basically anything
-        // you'd otherwise open four tabs for.
+        // A calculator that thinks too much. It does the boring
+        // math. It also does units, currencies, time zones, dates,
+        // METARs, runways, stock quotes — basically anything you'd
+        // otherwise open four tabs for.
 
-        // Click any @reference below to jump to that page. Each one
-        // is short, hands-on, and stays in your sidebar so you can
-        // come back any time.
+        # How this works
+        // Every line below is its own live calculation. The answer
+        // appears in the gutter on the right as you type. Comments
+        // and headers don't try to calculate:
+        //
+        //   # heading        → orange, organises the doc
+        //   // full comment  → muted side note, ignored
+        //   2 + 2 // result  → line still evaluates; comment ignored
+        //   @slug            → click to jump to that page
 
-        // Start here:
-        //   @math      — arithmetic, variables, "prev"
+        # Try it now
+        2 + 2
+        120 kt in km/h                   // unit conversion in plain English
+        100 EUR in USD                   // live FX rate
+        Berlin time                      // current time anywhere
+
+        # Topic pages — click any @link to jump
+        // Start anywhere. Each page is short and runs in real time.
+        //
+        //   @math      — arithmetic, variables, the "prev" trick
         //   @units     — knots, hPa, kilowatts, the lot
         //   @money     — FX, crypto, live single stocks
         //   @time      — time-zone math
         //   @dates     — days-between, age, weekdays
-
+        //
         // For specialists:
         //   @aviation  — METAR / TAF / RWY / sun / altitude
         //   @stocks    — Buffett scorecard + FMP setup
-        //   @tips      — keyboard shortcuts + cleanup tricks
+        //   @tips      — keyboard shortcuts + syntax cheat-sheet
 
-        // A test, so you see what live looks like:
-        2 + 2
-        120 kt in km/h
-        100 EUR in USD
-        Berlin time
-
-        // This page is yours. Edit it, gut it, pin it, delete it.
-        // Vektor won't take it personally.
+        # Housekeeping
+        // ⌘N for a new page · ⌘L to see all pages · right-click
+        // any page → Pin to keep it on top. This Welcome doc is
+        // pinned by default; right-click → Unpin if you'd rather it
+        // wasn't.
+        //
+        // This page is yours. Edit it, gut it, delete it. Vektor
+        // won't take it personally.
         """, updatedAt: at(0), isPinned: true)
 
         return [welcome, tips, stocks, aviation, dates, time, money, units, math]

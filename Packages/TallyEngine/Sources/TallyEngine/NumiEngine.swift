@@ -158,22 +158,37 @@ public final class NumiEngine {
         _ = context.evaluateScript("tally.resetScope();")
 
         for (idx, raw) in lines.enumerated() {
-            let trimmed = raw.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty {
+            let trimmedRaw = raw.trimmingCharacters(in: .whitespaces)
+            if trimmedRaw.isEmpty {
                 // Blank lines used to clear `previousValues`, which made
                 // `prev` after a blank silently break. Preserve scope so
                 // users can leave spacing between related calculations.
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .empty))
                 continue
             }
-            if trimmed.hasPrefix("//") {
+            if trimmedRaw.hasPrefix("//") {
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .comment))
                 continue
             }
-            if trimmed.hasPrefix("#") {
+            if trimmedRaw.hasPrefix("#") {
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .header))
                 continue
             }
+            // Strip a trailing ` // comment` so the expression before
+            // it still evaluates. The whitespace-prefix requirement
+            // protects URLs (`http://...`) and similar tokens. The
+            // raw line is preserved for editor display so the comment
+            // text stays visible alongside the result.
+            let trimmed: String = {
+                if let range = trimmedRaw.range(of: #"\s+//"#, options: .regularExpression) {
+                    return String(trimmedRaw[trimmedRaw.startIndex..<range.lowerBound])
+                        .trimmingCharacters(in: .whitespaces)
+                }
+                return trimmedRaw
+            }()
+            // After stripping, an all-comment-but-not-starting-with-//
+            // line is impossible — the only way trimmed went empty is
+            // if trimmedRaw was already empty, which we handled above.
 
             if let tzResult = handleTimezoneLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: tzResult, kind: .timezone))

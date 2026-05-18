@@ -14,6 +14,15 @@ struct NumiPreprocessor {
     func transform(_ raw: String, previousValues: [String]) -> Output {
         var line = raw
 
+        // Strip trailing `//` line comments so an expression followed
+        // by a side note still evaluates. Required: at least one
+        // whitespace char before the `//` so URLs (`http://...`) and
+        // similar tokens aren't mistakenly eaten. The everything-past-
+        // `//` portion is dropped — same convention as C/Swift/JS.
+        if let range = line.range(of: #"\s+//"#, options: .regularExpression) {
+            line = String(line[line.startIndex..<range.lowerBound])
+        }
+
         // Strip trailing inline "comments" — Numi syntax is `2 + 2 "note"`,
         // i.e. an opening quote that's whitespace-preceded. A bare `"` that
         // follows a digit (like the inches mark in `12'6"`) must NOT be
