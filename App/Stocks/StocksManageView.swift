@@ -76,7 +76,7 @@ struct StocksManageView: View {
                 SecureField(
                     "",
                     text: $newKey,
-                    prompt: Text(hasFMPKey ? "Paste a new key to replace the stored one" : "Paste your FMP key")
+                    prompt: Text(hasFMPKey ? "Paste a new key to replace the stored one" : "Paste your free FMP key")
                 )
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { commitNewKeyIfNeeded() }
@@ -88,6 +88,9 @@ struct StocksManageView: View {
                     if trimmed != new { newKey = trimmed; return }
                     if !trimmed.isEmpty { commitNewKeyIfNeeded() }
                 }
+                Text("FMP's Free plan covers ~250 calls/day — enough for casual use. Upgrade to a paid plan only if you hit the cap. Vektor reads the cap from the Plan picker below to budget calls locally.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 Text("Stored in the macOS Keychain. macOS may ask permission the first time Vektor *uses* the key (e.g. analysing a ticker) — that's the system protecting the secret. Opening this view never touches the Keychain.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

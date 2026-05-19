@@ -351,10 +351,17 @@ final class DocumentStore: ObservableObject {
 
         # Zulu and conversions
         1430 Zulu in HKT                 // briefing time → Hong Kong
+        16:30 Bali time in Munich        // 24-hour
+        4.30pm Uluwatu time in Barcelona // European dot + glued pm
         now in Tokyo + 2h                // what time will it be there in 2h?
 
         # Going the other way
         9am tomorrow Berlin in Los Angeles   // when is your 9am Berlin in LA tomorrow?
+
+        # Duration from a calculation
+        77/55 in time                    // fuel ÷ burn = 01:24:00 endurance
+        20/60 in time                    // 20 min as hh:mm:ss
+        2.5 in time                      // bare number = hours → 02:30:00
 
         # See also
         // Date math: @dates. Pilot stuff: @aviation. Back to @welcome.

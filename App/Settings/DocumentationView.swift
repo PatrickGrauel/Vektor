@@ -199,16 +199,25 @@ struct DocumentationView: View {
         Doc(title: "Time and timezones") {
             Doc_.paragraph("Times in different timezones, converted however you ask:")
             Doc_.code("""
-            Berlin time                  →  current local time in Berlin
-            Time in Singapore            →  same
-            2:30 pm HKT in Berlin        →  08:30 GMT+2
-            14:30 Berlin in Canggu       →  20:30 GMT+8
-            1430 Zulu + 2                →  16:30 GMT   (military time + offset)
-            now + 52 min                 →  current local time + 52 min
-            now + 2h + 52min             →  chained offsets are fine
-            12 min + 15 min              →  27 minutes
+            Berlin time                       →  current local time in Berlin
+            Time in Singapore                 →  same
+            16:30 Bali time in Munich         →  10:30 GMT+2
+            4.30pm Uluwatu time in Barcelona  →  10:30 GMT+2   (European dot + pm)
+            2:30 pm HKT in Berlin             →  08:30 GMT+2
+            14:30 Berlin in Canggu            →  20:30 GMT+8
+            1430 Zulu + 2                     →  16:30 GMT     (military + offset)
+            now + 52 min                      →  current local time + 52 min
+            now + 2h + 52min                  →  chained offsets are fine
+            12 min + 15 min                   →  27 minutes
             """)
-            Doc_.paragraph("You can name any IATA / ICAO airport code, any major city, common abbreviations (Z, Zulu, UTC, GMT, EST, PST, CET, JST, HKT, AEST, WITA…), and anything else Apple's geocoder recognizes. Unknown names resolve asynchronously the first time and cache for next time.")
+            Doc_.paragraph("Time format is flexible: `16:30`, `4:30 pm`, `4.30pm`, `4pm`, and 4-digit military `1630` all parse. You can name any IATA / ICAO airport code, any major city, common abbreviations (Z, Zulu, UTC, GMT, EST, PST, CET, JST, HKT, AEST, WITA…), and anything else Apple's geocoder recognizes. Unknown names resolve asynchronously the first time and cache for next time.")
+            Doc_.paragraph("**Duration from a calculation** — any arithmetic expression followed by `in time` is treated as hours and rendered hh:mm:ss. Useful when the result *is* a duration:")
+            Doc_.code("""
+            20/60 in time                     →  00:20:00      (20 ÷ 60 = ⅓ h = 20 min)
+            77/55 in time                     →  01:24:00      (fuel ÷ burn = endurance)
+            2.5 in time                       →  02:30:00
+            1.8h in hh:mm:ss                  →  01:48:00      (when the input has a unit)
+            """)
         }
     }
 
@@ -257,6 +266,7 @@ struct DocumentationView: View {
             ete(180, 120)                        // distance, GS  →  hours
             tod(10000, 500, 120)                 // alt to lose, rate fpm, GS
             endurance(50, 10)                    // fuel, burn  →  hours
+            77/55 in time                        // bare division → 01:24:00
             """)
             Doc_.paragraph("Type `METAR EDDM` or `TAF KSFO` on a calculator line and the raw report appears in the gutter. The dedicated METAR / TAF tab gives you the decoded version with danger-flagged fields (TS, gusts ≥ 20 kt, vis < 3 SM, ceiling < 1000 ft) and a runway crosswind computer.")
             Doc_.paragraph("The E6B tab has the wind-triangle math, density altitude, runway components, and top-of-descent on separate sub-tabs with live diagrams.")

@@ -198,6 +198,23 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertNotNil(results.first?.value)
     }
 
+    func testEuropeanDotAMPMConversion() throws {
+        // `4.30pm` (dot separator, glued pm) should be normalised to
+        // `4:30 pm` before the conversion-form regex runs.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("4.30pm Berlin in Hong Kong").first
+        XCTAssertEqual(r?.kind, .timezone,
+                       "expected timezone kind, got: \(String(describing: r))")
+        XCTAssertNotNil(r?.value)
+    }
+
+    func testEuropeanDotAMPMWithSpace() throws {
+        // `4.30 pm` (dot + space) also normalises.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("4.30 pm Berlin in Hong Kong").first
+        XCTAssertEqual(r?.kind, .timezone)
+    }
+
     func testZuluAlias() throws {
         let engine = try NumiEngine()
         let r1 = engine.evaluate("1430 Berlin in Zulu").first

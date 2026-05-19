@@ -305,6 +305,16 @@ public final class NumiEngine {
             if hasDigit && onlyAllowed { return nil }
         }
 
+        // 0. Normalise European-style am/pm times: `4.30pm` / `4.30 pm` →
+        //    `4:30 pm`. The downstream conversion-form regex only knows the
+        //    colon variant; rewriting up-front lets `4.30pm Bali in Munich`
+        //    take the same code path as `4:30 pm Bali in Munich`.
+        let line = line.replacingOccurrences(
+            of: #"(\b\d{1,2})\.(\d{2})\s?([AaPp][Mm])\b"#,
+            with: "$1:$2 $3",
+            options: .regularExpression
+        )
+
         // 1. Split off any trailing "+ N hours" / "- 2h" / "+2" offset.
         var (rawWorking, offsetSeconds) = extractTimeOffset(from: line)
 
