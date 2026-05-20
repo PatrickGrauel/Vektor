@@ -485,6 +485,24 @@ final class NumiEngineTests: XCTestCase {
                        "Timezone line must not be rewritten as duration: \(r)")
     }
 
+    func testPrevInIncompleteDoesNotHitTimezone() throws {
+        // Regression: `prev in` (the user halfway through typing
+        // `prev in minutes`) fuzzy-matched a city via CLGeocoder and
+        // came back as a timezone reading. The timezone handler must
+        // refuse any line containing the `prev` math keyword.
+        let engine = try NumiEngine()
+        let results = engine.evaluate("""
+        816
+        prev in
+        """)
+        XCTAssertEqual(results.count, 2)
+        let second = results[1].value ?? ""
+        XCTAssertFalse(second.contains("GMT") || second.contains("UTC"),
+                       "Incomplete prev-line must not resolve as timezone: \(second)")
+        XCTAssertNotEqual(results[1].kind, .timezone,
+                          "Incomplete prev-line must not be tagged .timezone: \(second)")
+    }
+
     // MARK: - METAR Zulu observation time parsing
 
     func testMetarObservationTimeParsed() {

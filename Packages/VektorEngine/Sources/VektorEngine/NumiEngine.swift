@@ -294,6 +294,16 @@ public final class NumiEngine {
     ///   "<HH:mm[ am/pm]> <FROM_TZ> in <TO_TZ>"
     ///   any of the above with a trailing "+ N" / "- N[h|hours]" offset
     private func handleTimezoneLine(_ line: String) -> String? {
+        // Math keywords beat geocoding. The bare-timezone heuristic asks
+        // CLGeocoder whether a string looks like a place, and short tokens
+        // like `prev in` fuzzy-match real cities (`Peren, Nagaland`). When
+        // the user is typing an incomplete `prev in <unit>` line, refusing
+        // here keeps the math pipeline in charge.
+        if line.range(of: #"(?i)\b(?:prev|sum|total|average|avg|mean)\b"#,
+                      options: .regularExpression) != nil {
+            return nil
+        }
+
         // Duration syntax `<arith expr> in {hours,minutes,seconds}` → handled
         // by the math pipeline, not here. Refuse so it falls through to the
         // preprocessor.
