@@ -105,6 +105,20 @@ final class DocumentStore: ObservableObject {
         }
 
         if loaded.isEmpty { persist() }
+
+        // Flush any pending debounced save when the app is about to quit
+        // so the typing window between the last keystroke and the
+        // debounce expiry can't lose data.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.persistTask != nil else { return }
+                self.persist()
+            }
+        }
     }
 
     // MARK: - Selection
@@ -130,12 +144,26 @@ final class DocumentStore: ObservableObject {
         guard let idx = documents.firstIndex(where: { $0.id == selectedID }) else { return }
         documents[idx].content = content
         documents[idx].updatedAt = .now
-        persist()
+        schedulePersist()
     }
 
     @discardableResult
     func newDocument() -> VektorDocument {
         let doc = VektorDocument(content: "")
+        documents.insert(doc, at: 0)
+        selectedID = doc.id
+        UserDefaults.standard.set(doc.id.uuidString, forKey: Self.lastSelectedKey)
+        persist()
+        return doc
+    }
+
+    /// Insert a topic example as a new document. Drives the "+ from
+    /// example…" menu — lets users pull in a pre-built reference page
+    /// (Math, Units, Money, Aviation…) on demand rather than getting
+    /// all of them slammed on at first launch.
+    @discardableResult
+    func newDocument(fromExample example: ExampleTemplate) -> VektorDocument {
+        let doc = VektorDocument(content: example.content)
         documents.insert(doc, at: 0)
         selectedID = doc.id
         UserDefaults.standard.set(doc.id.uuidString, forKey: Self.lastSelectedKey)
@@ -213,7 +241,30 @@ final class DocumentStore: ObservableObject {
 
     // MARK: - Persistence
 
+    /// Debounced trailing-edge save. Per-keystroke writes used to land on
+    /// the main thread synchronously — at ~9 KB per encode-and-write that
+    /// added up. Coalescing into one save per typing burst removes that
+    /// cost from the keystroke path without meaningfully widening the
+    /// data-loss window.
+    private var persistTask: Task<Void, Never>?
+    private static let persistDebounce: Duration = .milliseconds(400)
+
+    private func schedulePersist() {
+        persistTask?.cancel()
+        persistTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.persistDebounce)
+            guard !Task.isCancelled, let self else { return }
+            self.persist()
+        }
+    }
+
     private func persist() {
+        // Any caller that wants an immediate save (newDocument, delete,
+        // togglePinned, etc.) cancels the pending debounce here so we
+        // can't accidentally clobber the just-saved state with an
+        // older snapshot a moment later.
+        persistTask?.cancel()
+        persistTask = nil
         if let data = try? JSONEncoder().encode(documents) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
         }
@@ -227,31 +278,97 @@ final class DocumentStore: ObservableObject {
     }
 
     // MARK: - First-launch seed
+    //
+    // New users land on ONE curated welcome doc — a live, editable
+    // playground with sections per feature area. Each section has
+    // 2–3 working demos the user can tweak; the gutter updates as
+    // they type. This replaces an older 9-doc package that read more
+    // like a wiki than a calculator and overwhelmed first-launch.
+    //
+    // The 8 original topic docs are preserved as `exampleTemplates`,
+    // accessible via the "+ from example…" menu — users pull them in
+    // on demand when they want a topic-focused reference page.
 
-    /// Nine docs the new user lands with:
-    ///   • Welcome to Vektor   — short hub, links to the others via @refs
-    ///   • Math                — arithmetic + variables + prev
-    ///   • Units               — kt → km/h, °F → °C, the bread and butter
-    ///   • Money               — FX, crypto, live stock quotes
-    ///   • Time                — time-zone math + Zulu / local conversions
-    ///   • Dates               — days between, age, weekday-of-date
-    ///   • Aviation            — METAR / TAF / RWY / sun / altitude
-    ///   • Stocks              — DCA scoring + FMP setup pointer
-    ///   • Tips                — keyboard shortcuts and pane tour
-    ///
-    /// Welcome is pinned so it stays at the top of the list. The
-    /// linked docs aren't pinned — once the user has explored, they
-    /// fall to where their `updatedAt` puts them.
+    /// One self-contained welcome doc the user can edit, gut, or
+    /// delete. Pinned so it stays at the top until they explicitly
+    /// unpin. Cross-references `@math`, `@units` etc. all render as
+    /// "muted + dotted" until the user inserts those templates —
+    /// which is itself a discovery hint pointing at the menu.
     private static func welcomePackage() -> [VektorDocument] {
-        // Insert order matters for the sidebar list — newest first
-        // is the default sort, so build in reverse-chronological
-        // order with the welcome doc *last* (most recent → top).
-        let now = Date()
-        func at(_ offsetSeconds: TimeInterval) -> Date {
-            now.addingTimeInterval(offsetSeconds)
-        }
+        let welcome = VektorDocument(content: """
+        # Welcome to Vektor
+        // A calculator that thinks too much. Type any line — the
+        // answer appears in the gutter on the right as you type.
+        // Edit any line below; the result updates live.
 
-        let math = VektorDocument(content: """
+        # Math
+        2 + 2
+        sqrt(2)
+        sin(45°) ^ 2 + cos(45°) ^ 2     // hello there, Pythagoras
+
+        # Units (use `in` or `to`)
+        10 mi in km
+        180 lbs in kg
+        100°F in °C
+
+        # Money (live FX, no key needed)
+        100 EUR in USD
+        1 BTC in USD
+
+        # Time
+        Berlin time
+        1430 Zulu in HKT
+        77/55 in hours                   // duration from a quotient
+
+        # Dates
+        today
+        days between today and 2026-12-25
+        age 1990-03-15
+
+        # Aviation
+        METAR EDDM
+        TAF KSFO
+        RWY EDDM
+
+        # Variables and `prev`
+        rent = 1450 EUR
+        rent * 12                        // a year of rent
+        100 / 7
+        prev * 12                        // builds on the line above
+
+        # Syntax
+        // #  heading       → orange section header
+        // // comment       → muted line, no result
+        // @slug            → jump link; muted+dotted means "no doc yet"
+        //
+        // Press ⌘? any time for the full quick reference. Or hit Tab
+        // on any blank line to drop in a sample expression.
+
+        # Now make it yours
+        // Delete every line above — Vektor won't take it personally.
+        // ⌘N for a fresh page. The + button → "From example…" drops
+        // in a topic page (@math, @units, @aviation…) if you want a
+        // dedicated reference around.
+        """, isPinned: true)
+
+        return [welcome]
+    }
+
+    /// A topic example the user can pull in as a new document via the
+    /// "+ from example…" menu. Title is human-readable; content is
+    /// dropped into the doc verbatim.
+    struct ExampleTemplate: Identifiable {
+        let title: String
+        let content: String
+        var id: String { title }
+    }
+
+    /// The eight topic pages that used to be force-fed on first launch.
+    /// Now optional: users pull in any of them via the "+" menu when
+    /// they want a dedicated reference. Order matches conceptual
+    /// progression (basics → specialist).
+    static let exampleTemplates: [ExampleTemplate] = {
+        let math = ExampleTemplate(title: "Math", content: """
         # Math
         // Arithmetic, variables, and the "prev" trick.
 
@@ -276,9 +393,9 @@ final class DocumentStore: ObservableObject {
 
         # Where to next?
         // Try @units, or jump back to @welcome.
-        """, updatedAt: at(-80))
+        """)
 
-        let units = VektorDocument(content: """
+        let units = ExampleTemplate(title: "Units", content: """
         # Units
         // Type a number + a unit, then "to" or "in" + the target unit.
         // Vektor handles everything from kitchens to cockpits.
@@ -305,9 +422,9 @@ final class DocumentStore: ObservableObject {
         # Next stop
         // Try @money for currencies, @time for time zones,
         // or @aviation if knots and inHg are your daily bread.
-        """, updatedAt: at(-70))
+        """)
 
-        let money = VektorDocument(content: """
+        let money = ExampleTemplate(title: "Money", content: """
         # Money
         // Live rates fetched quietly in the background. No clicks,
         // no refresh buttons. FX from the ECB, crypto from public
@@ -336,9 +453,9 @@ final class DocumentStore: ObservableObject {
         // for any covered ticker lives in @stocks (the dedicated pane).
 
         // Back to @welcome.
-        """, updatedAt: at(-60))
+        """)
 
-        let time = VektorDocument(content: """
+        let time = ExampleTemplate(title: "Time", content: """
         # Time
         // For people in the wrong hemispheres, on the wrong calendars,
         // or both.
@@ -367,9 +484,9 @@ final class DocumentStore: ObservableObject {
 
         # See also
         // Date math: @dates. Pilot stuff: @aviation. Back to @welcome.
-        """, updatedAt: at(-50))
+        """)
 
-        let dates = VektorDocument(content: """
+        let dates = ExampleTemplate(title: "Dates", content: """
         # Dates
         // For procrastinators, parents, and project managers.
 
@@ -390,9 +507,9 @@ final class DocumentStore: ObservableObject {
 
         # Next
         // Time-zone math: @time. Money: @money. Back: @welcome.
-        """, updatedAt: at(-40))
+        """)
 
-        let aviation = VektorDocument(content: """
+        let aviation = ExampleTemplate(title: "Aviation", content: """
         # Aviation
         // ICAO and IATA codes both work. Multiple stations on one
         // line is supported: METAR EDDM EDMO LOWS.
@@ -419,9 +536,9 @@ final class DocumentStore: ObservableObject {
         # The richer aviation tools
         // Wind triangles, W&B, E6B all live in the Aviation pane.
         // Back to @welcome. Or see @stocks for the investing pane.
-        """, updatedAt: at(-30))
+        """)
 
-        let stocks = VektorDocument(content: """
+        let stocks = ExampleTemplate(title: "Stocks", content: """
         # Stocks
         // Two flavours: a single price lookup right here in the
         // calculator, and a full Buffett-style scorecard in the
@@ -447,20 +564,21 @@ final class DocumentStore: ObservableObject {
         // unlock international + history. Settings → Stocks.
 
         // Tips for everything else: @tips. Back to @welcome.
-        """, updatedAt: at(-20))
+        """)
 
-        let tips = VektorDocument(content: """
+        let tips = ExampleTemplate(title: "Tips", content: """
         # Tips
         // The shortcuts and small touches that make Vektor pleasant.
 
         # Keyboard
         // ⌘N            — new calculation
-        // ⌘L            — show all your calculations
+        // ⌘?            — open the quick reference
+        // ⌘⇧1 / ⌘⇧2 …  — jump to first / second pinned sheet
         // ⌘1 / ⌘2 …     — switch pane (in order they appear in the menu)
 
-        # In the documents list (⌘L)
-        // Right-click any row → Pin to top, Delete
-        // Search field filters by content (not just title)
+        # Sheet switcher (click the SHEET title at the top)
+        // Pinned sheets at the top, everything else below the divider.
+        // Click the pin icon on any row to pin/unpin; trash to delete.
 
         # Syntax cheat-sheet
         // #  at line start  →  section header (orange)
@@ -485,58 +603,8 @@ final class DocumentStore: ObservableObject {
         # Where to next
         // Hub: @welcome. Or pick a topic: @math @units @money
         // @time @dates @aviation @stocks.
-        """, updatedAt: at(-10))
+        """)
 
-        // Welcome lives last so it lands at the top of the list and
-        // is also the first thing the user sees. Pinned so it stays
-        // there until they explicitly unpin.
-        let welcome = VektorDocument(content: """
-        # Welcome to Vektor
-        // A calculator that thinks too much. It does the boring
-        // math. It also does units, currencies, time zones, dates,
-        // METARs, runways, stock quotes — basically anything you'd
-        // otherwise open four tabs for.
-
-        # How this works
-        // Every line below is its own live calculation. The answer
-        // appears in the gutter on the right as you type. Comments
-        // and headers don't try to calculate:
-        //
-        //   # heading        → orange, organises the doc
-        //   // full comment  → muted side note, ignored
-        //   2 + 2 // result  → line still evaluates; comment ignored
-        //   @slug            → click to jump to that page
-
-        # Try it now
-        2 + 2
-        120 kt in km/h                   // unit conversion in plain English
-        100 EUR in USD                   // live FX rate
-        Berlin time                      // current time anywhere
-
-        # Topic pages — click any @link to jump
-        // Start anywhere. Each page is short and runs in real time.
-        //
-        //   @math      — arithmetic, variables, the "prev" trick
-        //   @units     — knots, hPa, kilowatts, the lot
-        //   @money     — FX, crypto, live single stocks
-        //   @time      — time-zone math
-        //   @dates     — days-between, age, weekdays
-        //
-        // For specialists:
-        //   @aviation  — METAR / TAF / RWY / sun / altitude
-        //   @stocks    — Buffett scorecard + FMP setup
-        //   @tips      — keyboard shortcuts + syntax cheat-sheet
-
-        # Housekeeping
-        // ⌘N for a new page · ⌘L to see all pages · right-click
-        // any page → Pin to keep it on top. This Welcome doc is
-        // pinned by default; right-click → Unpin if you'd rather it
-        // wasn't.
-        //
-        // This page is yours. Edit it, gut it, delete it. Vektor
-        // won't take it personally.
-        """, updatedAt: at(0), isPinned: true)
-
-        return [welcome, tips, stocks, aviation, dates, time, money, units, math]
-    }
+        return [math, units, money, time, dates, aviation, stocks, tips]
+    }()
 }

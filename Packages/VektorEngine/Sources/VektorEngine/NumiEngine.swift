@@ -144,6 +144,12 @@ public final class NumiEngine {
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         var results: [LineResult] = []
         var previousValues: [String] = []
+        // Window a bare aggregate (`sum` / `average`) totals over. Kept
+        // separate from `previousValues` (which feeds `prev` and persists
+        // across blanks): this resets at blank lines so each spaced-apart
+        // section sums on its own, and excludes prior aggregate results so
+        // stacked sums don't double-count.
+        var aggregateWindow: [String] = []
 
         // Open a quote-bridge transaction so stock prefetches are
         // book-kept across this whole evaluation. Pairs with the
@@ -160,9 +166,11 @@ public final class NumiEngine {
         for (idx, raw) in lines.enumerated() {
             let trimmedRaw = raw.trimmingCharacters(in: .whitespaces)
             if trimmedRaw.isEmpty {
-                // Blank lines used to clear `previousValues`, which made
-                // `prev` after a blank silently break. Preserve scope so
-                // users can leave spacing between related calculations.
+                // A blank line ends an aggregate section: a following `sum`
+                // totals only the lines since the blank, so two stacked
+                // expense lists sum independently. `previousValues` is left
+                // intact so `prev` still reaches back across the blank.
+                aggregateWindow.removeAll()
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .empty))
                 continue
             }
@@ -193,6 +201,7 @@ public final class NumiEngine {
             if let tzResult = handleTimezoneLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: tzResult, kind: .timezone))
                 previousValues.append(tzResult)
+                aggregateWindow.append(tzResult)
                 continue
             }
 
@@ -219,14 +228,69 @@ public final class NumiEngine {
                 continue
             }
 
+            if let wind = handleWindLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: wind.value, kind: .expression,
+                                     annotation: wind.annotation))
+                continue
+            }
+
             if let stock = handleStockLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: stock.value, kind: .expression,
                                      annotation: stock.annotation))
                 continue
             }
 
+            // Coordinate-form distance first; airport-form regex needs
+            // letters where this one needs digits so they're mutually
+            // exclusive, but trying the more specific pattern first
+            // keeps the dispatch predictable.
+            if let coordDist = Self.handleCoordinateDistanceLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: coordDist, kind: .expression))
+                continue
+            }
+
             if let dist = Self.handleDistanceLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: dist, kind: .expression))
+                continue
+            }
+
+            if let tod = Self.handleTopOfDescentLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: tod, kind: .expression))
+                continue
+            }
+
+            if let roman = Self.handleRomanLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: roman, kind: .expression))
+                continue
+            }
+
+            if let bases = Self.handleBasesLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: bases, kind: .expression))
+                continue
+            }
+
+            if let color = Self.handleColorLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: color, kind: .expression))
+                continue
+            }
+
+            if let mortgage = Self.handleMortgageLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: mortgage, kind: .expression))
+                continue
+            }
+
+            if let compound = Self.handleCompoundLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: compound, kind: .expression))
+                continue
+            }
+
+            // List statistics needs the full lines array + current index
+            // to peek at the contiguous numeric block below the marker.
+            // Distinct from the per-line handlers above.
+            if let stats = Self.handleListStatsLine(trimmed,
+                                                    lines: lines,
+                                                    currentIndex: idx) {
+                results.append(.init(line: idx, raw: raw, value: stats, kind: .expression))
                 continue
             }
 
@@ -240,7 +304,9 @@ public final class NumiEngine {
                 continue
             }
 
-            let prep = preprocessor.transform(raw, previousValues: previousValues)
+            let prep = preprocessor.transform(raw,
+                                              previousValues: previousValues,
+                                              aggregateValues: aggregateWindow)
             if prep.isLabelOnly {
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .label))
                 continue
@@ -279,6 +345,11 @@ public final class NumiEngine {
             } else {
                 results.append(.init(line: idx, raw: raw, value: str, kind: .expression))
                 previousValues.append(str)
+                // Keep an aggregate's own result out of the window a later
+                // aggregate sums, so two `sum`s in a block don't double-count.
+                if !prep.isAggregate {
+                    aggregateWindow.append(str)
+                }
             }
         }
 
@@ -611,7 +682,10 @@ public final class NumiEngine {
     /// Detect `METAR XXXX` or `TAF XXXX` lines. Returns the raw weather
     /// report plus a freshness annotation. On a cache miss, kicks off a
     /// fetch + returns a "Fetching…" placeholder.
-    private struct MetarLine {
+    // `internal` (no `private`) so handlers split out into Handlers.swift
+    // can return this same shape — wind, briefing, altitude, stock all
+    // share the "value + optional freshness chip" return type.
+    struct MetarLine {
         let value: String
         let annotation: LineResult.Annotation?
     }

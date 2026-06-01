@@ -18,8 +18,18 @@ enum VektorTheme {
         light: NSColor(red: 0xEC/255, green: 0xE8/255, blue: 0xDF/255, alpha: 1)
     )
 
-    /// Accent (timezone results, active selection). Same in both modes.
-    static let accent = Color(red: 0xFF/255, green: 0x9F/255, blue: 0x0F/255)
+    /// Accent (timezone results, active selection, pinned-state, headers).
+    /// Dark mode: a bright glowing orange — high contrast against the
+    /// navy background lets it "light up." Light mode: a burnt-orange
+    /// sienna — bright orange on warm cream reads as muddy "highway
+    /// sign," while the darker variant keeps the same hue identity but
+    /// earns visual weight against a light warm background. Same rule
+    /// SF Symbols applies: dark-mode accents glow lighter, light-mode
+    /// accents push darker.
+    static let accent = dyn(
+        dark:  NSColor(red: 0xFF/255, green: 0x9F/255, blue: 0x0F/255, alpha: 1),
+        light: NSColor(red: 0xC2/255, green: 0x61/255, blue: 0x1F/255, alpha: 1)
+    )
 
     /// Secondary chart line — used when a drill-down chart needs to
     /// plot a second metric alongside the accent-colored primary

@@ -22,9 +22,6 @@ packages:
     path: Packages/VektorEngine
   VektorAviation:
     path: Packages/VektorAviation
-  GRDB:
-    url: https://github.com/groue/GRDB.swift
-    from: "6.29.0"
 
 targets:
   Vektor:
@@ -41,8 +38,6 @@ targets:
     dependencies:
       - package: VektorEngine
       - package: VektorAviation
-      - package: GRDB
-        product: GRDB
     info:
       path: App/Resources/Info.plist
       properties:

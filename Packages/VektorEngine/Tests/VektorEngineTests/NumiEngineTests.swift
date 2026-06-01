@@ -674,6 +674,39 @@ final class NumiEngineTests: XCTestCase {
                       "expected 200 cm, got: \(r?.value ?? "")")
     }
 
+    func testScaledConversionThenDivide() throws {
+        // Regression: `4.5M mm in cm / 3` must bind as `(4.5M mm in cm) / 3`.
+        // `rewriteScales` expands `4.5M` to `(4.5 * 1000000)`, and the
+        // conversion-wrap LHS pattern previously rejected a parenthesized
+        // number followed by a unit — so the `/ 3` leaked into the conversion
+        // target (`to (cm / 3)`). Deterministic (no FX): 4.5M mm = 450 000 cm,
+        // / 3 = 150 000 cm.
+        let engine = try NumiEngine()
+        let bare   = engine.evaluate("4.5M mm in cm / 3").first
+        let parens = engine.evaluate("(4.5M mm in cm) / 3").first
+        XCTAssertEqual(bare?.kind, .expression)
+        XCTAssertTrue((bare?.value ?? "").contains("150 000"),
+                      "expected 150 000 cm, got: \(bare?.value ?? "")")
+        XCTAssertEqual(bare?.value, parens?.value,
+                       "unparenthesized form must match the explicit-parens form")
+    }
+
+    func testScaledCurrencyConversionThenDivideWrapsConversion() throws {
+        // The reported case, checked at the preprocessing layer so it's
+        // independent of live FX rates. The conversion must be wrapped so the
+        // `/ 3` stays outside it: `((4.5 * 1000000) IDR to EUR) / 3`.
+        // Pre-fix the parens were dropped, leaving `... to EUR / 3` — i.e.
+        // mathjs divided the target unit (`to (EUR / 3)`), the wrong answer.
+        let pre = NumiPreprocessor()
+        let out = pre.transform("4.5M idr in eur / 3",
+                                previousValues: [],
+                                aggregateValues: [])
+        XCTAssertTrue(out.rewritten.contains("to EUR)"),
+                      "conversion should be wrapped: \(out.rewritten)")
+        XCTAssertFalse(out.rewritten.contains("EUR / 3"),
+                       "the divisor must not bind to the conversion target: \(out.rewritten)")
+    }
+
     func testCurrencySumThenConvert() throws {
         // Regression: `100 EUR + 25 USD in USD` used to auto-display in
         // EUR (the leading operand's unit) because `to` has higher
@@ -847,9 +880,10 @@ final class NumiEngineTests: XCTestCase {
                       "expected average in EUR (last seen unit), got: \(last)")
     }
 
-    func testSumPreservesScopeAcrossBlankLine() throws {
-        // Blank lines must NOT reset previousValues — users intentionally
-        // space related calculations apart.
+    func testSumResetsAtBlankLine() throws {
+        // A blank line ends an aggregate section: `sum` totals only the lines
+        // since the last blank, so spaced-apart lists sum on their own.
+        // (`prev` still reaches across blanks — see testPrevSurvivesBlankLines.)
         let engine = try NumiEngine()
         let r = engine.evaluate("""
         10
@@ -858,8 +892,48 @@ final class NumiEngineTests: XCTestCase {
         30
         sum
         """)
-        XCTAssertEqual(r.last?.value, "60",
-                       "blank lines should not break running aggregates")
+        XCTAssertEqual(r.last?.value, "30",
+                       "a blank line should start a fresh aggregate scope")
+    }
+
+    func testStackedSumsDoNotLeakAcrossBlankLine() throws {
+        // Regression (screenshot bug): a second section's `sum` must not fold
+        // in the first section's line items OR the first section's `sum`
+        // result. Plain numbers keep this independent of live FX rates.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        # A
+        100
+        200
+        sum
+
+        # B
+        4
+        5
+        sum
+        """)
+        let sums = r.filter { $0.raw.trimmingCharacters(in: .whitespaces) == "sum" }
+                    .map { $0.value }
+        XCTAssertEqual(sums, ["300", "9"],
+                       "each headed, blank-separated section must sum on its own")
+    }
+
+    func testStackedSumInSameBlockDoesNotDoubleCount() throws {
+        // Two `sum`s with no blank between them: the second sums the raw line
+        // items (10+20+5 = 35), not 65 — i.e. it must not fold in the first
+        // `sum`'s 30.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        10
+        20
+        sum
+        5
+        sum
+        """)
+        let sums = r.filter { $0.raw.trimmingCharacters(in: .whitespaces) == "sum" }
+                    .map { $0.value }
+        XCTAssertEqual(sums, ["30", "35"],
+                       "a later sum must exclude an earlier sum's result")
     }
 
     func testAggregateOnEmptyDocumentReturnsZero() throws {

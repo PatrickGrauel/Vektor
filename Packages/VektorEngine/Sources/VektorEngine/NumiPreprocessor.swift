@@ -9,9 +9,16 @@ struct NumiPreprocessor {
     struct Output {
         let rewritten: String
         let isLabelOnly: Bool
+        /// True when the line is a bare aggregate (`sum` / `total` /
+        /// `average` / `avg`). The engine uses this to keep an aggregate's
+        /// own result out of the window a later aggregate sums over, so two
+        /// stacked `sum`s in one block don't double-count.
+        let isAggregate: Bool
     }
 
-    func transform(_ raw: String, previousValues: [String]) -> Output {
+    func transform(_ raw: String,
+                   previousValues: [String],
+                   aggregateValues: [String]) -> Output {
         var line = raw
 
         // Strip trailing `//` line comments so an expression followed
@@ -47,7 +54,7 @@ struct NumiPreprocessor {
             }
             if isLikelyLabel {
                 if rhsTrimmed.isEmpty {
-                    return Output(rewritten: "", isLabelOnly: true)
+                    return Output(rewritten: "", isLabelOnly: true, isAggregate: false)
                 }
                 line = String(rhs)
             }
@@ -55,8 +62,12 @@ struct NumiPreprocessor {
 
         var s = line.trimmingCharacters(in: .whitespaces)
         if s.isEmpty {
-            return Output(rewritten: "", isLabelOnly: true)
+            return Output(rewritten: "", isLabelOnly: true, isAggregate: false)
         }
+        // Detect a bare aggregate from the cleaned line BEFORE later rewrite
+        // passes mangle the keyword, so the engine can keep this line's own
+        // result out of the window a subsequent aggregate sums over.
+        let isAggregate = Self.isAggregateLine(s)
 
         s = rewriteCommaDecimals(s)
         // Date math runs FIRST: it can replace `days between … and …` with
@@ -92,7 +103,7 @@ struct NumiPreprocessor {
         s = rewriteHumanTime(s)
         s = rewriteInchAmbiguity(s)
         s = rewriteConversion(s)
-        s = rewriteAggregates(s, previousValues: previousValues)
+        s = rewriteAggregates(s, values: aggregateValues)
 
         // If the original line used feet-inches notation AND the user
         // didn't ask for a different output unit, wrap the result in
@@ -112,7 +123,7 @@ struct NumiPreprocessor {
             }
         }
 
-        return Output(rewritten: s, isLabelOnly: false)
+        return Output(rewritten: s, isLabelOnly: false, isAggregate: isAggregate)
     }
 
     // MARK: - Finance natural language
@@ -227,6 +238,31 @@ struct NumiPreprocessor {
 
     private func rewriteDateMath(_ input: String) -> String {
         var s = input
+
+        // `business days between X and Y` — Mon–Fri only count.
+        // MUST run before the plain `days between` rewrite below: the
+        // shorter pattern would otherwise match "days between X and Y"
+        // inside this phrase and return total days instead of the
+        // weekday subset. No holiday calendar yet — purely Sat/Sun
+        // exclusion. Adding regional holidays later just means filtering
+        // an extra Set<Date> here.
+        s = replaceMatches(in: s, pattern: #"\bbusiness\s+days\s+between\s+(\S+)\s+and\s+(\S+)\b"#) { groups in
+            guard let a = Self.parseDateToken(groups[1]),
+                  let b = Self.parseDateToken(groups[2]) else { return nil }
+            let cal = Calendar(identifier: .gregorian)
+            let (start, end) = a < b ? (a, b) : (b, a)
+            var count = 0
+            var day = cal.startOfDay(for: start)
+            let endDay = cal.startOfDay(for: end)
+            while day < endDay {
+                let weekday = cal.component(.weekday, from: day)
+                // Calendar's weekday: 1 = Sunday, 7 = Saturday.
+                if weekday != 1 && weekday != 7 { count += 1 }
+                guard let next = cal.date(byAdding: .day, value: 1, to: day) else { break }
+                day = next
+            }
+            return String(count)
+        }
 
         // `days between X and Y` — supports an optional trailing
         // ` in <unit>` (weeks / months / years / hours / minutes)
@@ -737,11 +773,16 @@ struct NumiPreprocessor {
         //   100 EUR in IDR * 2   →   (100 EUR to IDR) * 2
         //   1 m in cm * 2        →   (1 m to cm) * 2
         //
-        // The LHS pattern is intentionally narrow: a number with optional
-        // unit OR a parenthesized expression. Matching `.+?` against the
-        // whole line would over-capture and produce wrong parens.
+        // The LHS pattern is intentionally narrow: a number OR a
+        // parenthesized expression, each with an optional trailing unit.
+        // The paren+unit shape matters because `rewriteScales` turns
+        // `4.5M IDR` into `(4.5 * 1000000) IDR` — without allowing a unit
+        // after the parens, `4.5M idr in eur / 3` wouldn't get wrapped and
+        // the `/ 3` would leak into the conversion target (`to (EUR / 3)`).
+        // Matching `.+?` against the whole line would over-capture and
+        // produce wrong parens.
         let convWord = #"(?:in|into|as|to)"#
-        let lhs = #"((?:\([^()]+\)|[\d.]+(?:\s+[A-Za-z][A-Za-z0-9_]*)?))"#
+        let lhs = #"((?:\([^()]+\)|[\d.]+)(?:\s+[A-Za-z][A-Za-z0-9_]*)?)"#
         let unit = #"([A-Za-z]{2,}|°[A-Za-z])"#
         // Require whitespace BEFORE the operator so we don't fire on
         // compound units like `km/h` or `m/s` where `/` is part of the unit
@@ -817,12 +858,29 @@ struct NumiPreprocessor {
     // — currencies, lengths, masses, temperatures, etc. — because the
     // result is just `<base-call>` with a trailing `to <unit>` appended.
 
-    private func rewriteAggregates(_ input: String, previousValues: [String]) -> String {
-        let trimmed = input.trimmingCharacters(in: .whitespaces)
-        let pattern = #"^(sum|total|average|avg)(?:\s+(?:to|in|as)\s+(\S+))?$"#
+    /// Matches a bare aggregate line: `sum` / `total` / `average` / `avg`,
+    /// optionally followed by `to|in|as <unit>`. Compiled once (this runs
+    /// per line) and the single source of truth for `isAggregateLine`.
+    private static let aggregateRegex: NSRegularExpression? =
+        try? NSRegularExpression(
+            pattern: #"^(sum|total|average|avg)(?:\s+(?:to|in|as)\s+(\S+))?$"#,
+            options: [.caseInsensitive])
 
-        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
-        else { return input }
+    /// True when `line` is a bare aggregate keyword line. Used by the engine
+    /// to keep an aggregate's own result out of a later aggregate's window.
+    static func isAggregateLine(_ line: String) -> Bool {
+        guard let re = aggregateRegex else { return false }
+        let ns = line as NSString
+        return re.firstMatch(in: line,
+                             range: NSRange(location: 0, length: ns.length)) != nil
+    }
+
+    // `values` is the engine-supplied aggregate window: it resets at blank
+    // lines and excludes prior aggregate results, so spaced-apart sections
+    // sum independently and stacked sums don't double-count (see NumiEngine).
+    private func rewriteAggregates(_ input: String, values: [String]) -> String {
+        let trimmed = input.trimmingCharacters(in: .whitespaces)
+        guard let re = Self.aggregateRegex else { return input }
         let ns = trimmed as NSString
         guard let m = re.firstMatch(in: trimmed,
                                     range: NSRange(location: 0, length: ns.length))
@@ -834,12 +892,12 @@ struct NumiPreprocessor {
             return r.location == NSNotFound ? nil : ns.substring(with: r)
         }()
 
-        if previousValues.isEmpty { return "0" }
+        if values.isEmpty { return "0" }
 
         // Strip thousands-spaces from every value so mathjs doesn't read
         // "1 800 ft" as "1 × 800 ft". Without this the sum quietly went
         // wrong on any result over 999.
-        let joined = previousValues
+        let joined = values
             .map { "(\(Self.stripThousandsSpaces($0)))" }
             .joined(separator: ",")
         let funcName = (kind == "average" || kind == "avg") ? "mean" : "sum"
@@ -848,7 +906,7 @@ struct NumiPreprocessor {
         // Prefer the user's explicit "in/to/as <unit>"; otherwise default
         // to the last value's trailing unit so currencies and lengths
         // come out in the unit the user just typed.
-        let target = explicitUnit ?? Self.trailingUnit(of: previousValues.last)
+        let target = explicitUnit ?? Self.trailingUnit(of: values.last)
         guard let target else { return base }
         // `sum in hours/minutes/seconds` reuses the humanTime formatter so the
         // aggregate output matches a single-line `<expr> in <unit>`.

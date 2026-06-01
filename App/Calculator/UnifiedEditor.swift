@@ -26,6 +26,15 @@ struct UnifiedEditor: NSViewRepresentable {
     /// can navigate to another document. Optional — when nil, clicks
     /// fall through to normal caret placement.
     var onPageReferenceClicked: ((String) -> Void)?
+    /// Returns `true` when the given slug resolves to an existing
+    /// document. Drives two-state styling for `@reference` tokens —
+    /// resolved refs get the active accent + solid underline; unresolved
+    /// refs render muted with a dotted underline so the user can tell
+    /// "this won't navigate" at a glance, without making the @-syntax
+    /// disappear into surrounding text. Also gates click navigation:
+    /// unresolved refs fall through to default caret placement so the
+    /// token is still text-editable.
+    var resolvePageReference: (String) -> Bool = { _ in false }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
@@ -48,6 +57,8 @@ struct UnifiedEditor: NSViewRepresentable {
         //    outer NSScrollView is what scrolls.
         let tv = AutocompletingTextView()
         tv.onPageReferenceClicked = onPageReferenceClicked
+        tv.resolvePageReference = resolvePageReference
+        context.coordinator.resolvePageReference = resolvePageReference
         tv.isRichText = false
         tv.isEditable = true
         tv.isSelectable = true
@@ -82,7 +93,7 @@ struct UnifiedEditor: NSViewRepresentable {
         tv.string = text
         tv.textStorage?.delegate = context.coordinator
         if let storage = tv.textStorage {
-            UnifiedCoordinator.applyLineColors(to: storage)
+            context.coordinator.applyLineColors(to: storage)
         }
 
         let divider = DividerStrip()
@@ -123,16 +134,36 @@ struct UnifiedEditor: NSViewRepresentable {
               let tv = column.editor
         else { return }
 
-        // Keep the click-jump closure in sync with SwiftUI re-renders.
+        // Keep the click-jump closure and slug resolver in sync with
+        // SwiftUI re-renders — both can capture fresher state on each
+        // body recomputation.
         tv.onPageReferenceClicked = onPageReferenceClicked
+        tv.resolvePageReference = resolvePageReference
+        context.coordinator.resolvePageReference = resolvePageReference
 
         // Text refresh (e.g. document switch).
-        if tv.string != text {
+        let textChanged = (tv.string != text)
+        if textChanged {
             tv.string = text
             if let storage = tv.textStorage {
-                UnifiedCoordinator.applyLineColors(to: storage)
+                context.coordinator.applyLineColors(to: storage)
             }
+            // Reassigning `tv.string` wipes paragraph attributes back to
+            // the defaultParagraphStyle, so any spacing the previous doc
+            // had stamped is gone. Invalidate so the next layout pass
+            // re-stamps even if the new extras dict happens to match.
+            column.invalidateAppliedExtras()
         }
+
+        // Capture results-changed BEFORE we overwrite gutter.results.
+        // Required so the async briefing case (METAR / TAF / RWY data
+        // arriving over seconds, each firing a re-evaluate that grows
+        // the result text) re-stamps paragraph spacing as the rendered
+        // height grows. Without this, the user types a line below the
+        // briefing, line 0's spacing stays frozen at the height it had
+        // when the first METAR cache hit came in, and the next line's
+        // gutter content overlaps the rest of the briefing.
+        let resultsChanged = (column.gutter?.results ?? []) != results
 
         // Pipe latest renderers + data into the gutter.
         column.gutter?.results = results
@@ -140,10 +171,21 @@ struct UnifiedEditor: NSViewRepresentable {
         column.gutter?.renderAnnotation = renderAnnotation
 
         // Width may have changed from the call site.
+        let widthChanged = abs(column.editorWidth - editorWidth) > 0.5
         column.editorWidth = editorWidth
 
-        column.needsLayout = true
-        column.relayoutAndResize()
+        // textDidChange already ran relayoutAndResize for the user's just-
+        // completed keystroke. SwiftUI then re-renders because the binding
+        // write echoed back — that second updateNSView would relayout the
+        // same state. Skip it unless something else genuinely changed.
+        let coord = context.coordinator
+        let suppressed = coord.skipNextRelayout
+        coord.skipNextRelayout = false
+
+        if !suppressed || textChanged || widthChanged || resultsChanged {
+            column.needsLayout = true
+            column.relayoutAndResize()
+        }
         tv.recomputeSuggestion()
     }
 
@@ -157,6 +199,14 @@ struct UnifiedEditor: NSViewRepresentable {
 final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
     let text: Binding<String>
     weak var column: ColumnContainer?
+    /// Set after `textDidChange` finishes its own relayoutAndResize so the
+    /// SwiftUI-binding echo's redundant `updateNSView` can skip a second
+    /// pass. Consumed (cleared) by `updateNSView`.
+    var skipNextRelayout: Bool = false
+    /// Slug → does-this-doc-exist check. Installed by `UnifiedEditor` on
+    /// each render so the styling pass picks up newly-created or
+    /// deleted documents on the next text edit.
+    var resolvePageReference: (String) -> Bool = { _ in false }
 
     init(text: Binding<String>) {
         self.text = text
@@ -167,6 +217,7 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
         text.wrappedValue = tv.string
         tv.recomputeSuggestion()
         column?.relayoutAndResize()
+        skipNextRelayout = true
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -184,13 +235,13 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
                      range editedRange: NSRange,
                      changeInLength delta: Int) {
         guard editedMask.contains(.editedCharacters) else { return }
-        Self.applyLineColors(to: textStorage, in: editedRange)
+        applyLineColors(to: textStorage, in: editedRange)
     }
 
     /// Full-document colour pass. Used for the initial render and for
     /// bulk text replacements (document switch) where the storage
     /// delegate path doesn't fire on a per-line basis.
-    static func applyLineColors(to storage: NSTextStorage) {
+    func applyLineColors(to storage: NSTextStorage) {
         let fullText = storage.string as NSString
         applyLineColors(to: storage,
                         in: NSRange(location: 0, length: fullText.length))
@@ -203,7 +254,7 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
     /// Attribute-only edits (which is all this method makes) don't
     /// trigger `.editedCharacters`, so re-stamping from inside the
     /// storage delegate doesn't recurse.
-    static func applyLineColors(to storage: NSTextStorage, in range: NSRange) {
+    func applyLineColors(to storage: NSTextStorage, in range: NSRange) {
         let fullText = storage.string as NSString
         let total = fullText.length
         guard total > 0 else { return }
@@ -231,6 +282,18 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
                 colour = defaultColor
             }
             storage.addAttribute(.foregroundColor, value: colour, range: lineRange)
+            // Dim any trailing `// comment` on expression / header lines
+            // so it matches the muted styling of full-line `//` comments.
+            // The engine already strips trailing comments before eval
+            // (see NumiEngine.evaluate) — the styling just lagged behind.
+            // Skipped on pure-comment lines, where the whole line is
+            // already muted via the base pass above.
+            if !trimmed.hasPrefix("//") {
+                applyTrailingCommentStyling(to: storage,
+                                            lineString: lineString,
+                                            lineRange: lineRange,
+                                            commentColor: commentColor)
+            }
             // Layer `@reference` styling on top of the base line
             // colour so jump links pop with an underline + accent
             // tint regardless of whether the line was a header,
@@ -244,39 +307,76 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
         }
     }
 
+    /// Matches a trailing `// …` comment on an expression line. The
+    /// leading `\s+` requirement is what protects URLs like `http://…`
+    /// from being mis-styled as comments — same rule the engine uses
+    /// for stripping before evaluation. Group 1 captures the comment
+    /// itself (starting at the `//`), excluding the whitespace
+    /// separator and excluding the line's trailing newline.
+    private static let trailingCommentRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"\s+(//[^\r\n]*)"#)
+    }()
+
+    private func applyTrailingCommentStyling(to storage: NSTextStorage,
+                                             lineString: String,
+                                             lineRange: NSRange,
+                                             commentColor: NSColor) {
+        guard let regex = Self.trailingCommentRegex else { return }
+        let ns = lineString as NSString
+        guard let match = regex.firstMatch(in: lineString,
+                                           range: NSRange(location: 0, length: ns.length)),
+              match.numberOfRanges >= 2 else { return }
+        let local = match.range(at: 1)
+        let absRange = NSRange(location: lineRange.location + local.location,
+                               length: local.length)
+        storage.addAttribute(.foregroundColor, value: commentColor, range: absRange)
+    }
+
     /// Attribute key the AutocompletingTextView's mouseDown handler
     /// reads to decide whether a click targets an `@ref` jump.
     /// Value is the slug string (lowercased first word after `@`).
     static let pageReferenceAttributeKey =
         NSAttributedString.Key("vektor.calculator.pageRef")
 
-    /// Highlight every `@\w+` token inside `lineString` with an
-    /// accent foreground + underline, and stash the slug on a
-    /// custom attribute so click handling can read it back without
-    /// re-scanning the text.
+    /// Highlight every `@\w+` token inside `lineString` and stash the
+    /// slug on a custom attribute so click handling can read it back
+    /// without re-scanning the text. Resolved refs (slug points to a
+    /// real doc) get accent + solid underline — the "active link"
+    /// treatment. Unresolved refs get muted + dotted underline so the
+    /// user can still tell `@math` is an @-token, but at a glance sees
+    /// it won't navigate anywhere yet.
     private static let pageRefRegex: NSRegularExpression? = {
         try? NSRegularExpression(pattern: #"@[A-Za-z0-9_-]+"#)
     }()
-    private static func applyPageReferenceStyling(to storage: NSTextStorage,
-                                                  lineString: String,
-                                                  lineRange: NSRange) {
-        guard let regex = pageRefRegex else { return }
+    private func applyPageReferenceStyling(to storage: NSTextStorage,
+                                           lineString: String,
+                                           lineRange: NSRange) {
+        guard let regex = Self.pageRefRegex else { return }
         let ns = lineString as NSString
+        let resolvedColor = NSColor(VektorTheme.accent)
+        let unresolvedColor = NSColor(VektorTheme.muted)
+        let resolvedUnderline = NSUnderlineStyle.single.rawValue
+        let unresolvedUnderline = NSUnderlineStyle([.single, .patternDot]).rawValue
         regex.enumerateMatches(in: lineString,
                                range: NSRange(location: 0, length: ns.length)) { match, _, _ in
             guard let m = match else { return }
             // Absolute range = line offset + match's offset within the line.
             let absRange = NSRange(location: lineRange.location + m.range.location,
                                    length: m.range.length)
-            let slug = ns.substring(with: m.range).lowercased().dropFirst()
+            let slug = String(ns.substring(with: m.range).lowercased().dropFirst())
+            let resolves = resolvePageReference(slug)
             storage.addAttribute(.foregroundColor,
-                                 value: NSColor(VektorTheme.accent),
+                                 value: resolves ? resolvedColor : unresolvedColor,
                                  range: absRange)
             storage.addAttribute(.underlineStyle,
-                                 value: NSUnderlineStyle.single.rawValue,
+                                 value: resolves ? resolvedUnderline : unresolvedUnderline,
                                  range: absRange)
-            storage.addAttribute(pageReferenceAttributeKey,
-                                 value: String(slug),
+            // Always stash the slug so the click handler can still read
+            // it — navigation is gated separately on the resolver, so an
+            // unresolved click falls through to default caret placement
+            // without us having to scrub the attribute.
+            storage.addAttribute(Self.pageReferenceAttributeKey,
+                                 value: slug,
                                  range: absRange)
         }
     }
@@ -297,6 +397,16 @@ final class ColumnContainer: NSView {
     /// divider; written back to the SwiftUI binding via the callback.
     var editorWidth: CGFloat = 420
     var onEditorWidthChange: (CGFloat) -> Void = { _ in }
+
+    /// No-op kept on the interface so `UnifiedEditor.updateNSView` can
+    /// still call it after `tv.string` is reassigned. Previously this
+    /// invalidated a `lastAppliedExtras` skip cache; that cache caused
+    /// stale paragraph spacing for multi-airport briefings whose result
+    /// text grew across multiple async data arrivals, so the skip was
+    /// removed and the stamping is now unconditional.
+    func invalidateAppliedExtras() {
+        // Intentional no-op (kept for call-site compatibility).
+    }
 
     private let minEditorWidth: CGFloat = 240
     private let minGutterWidth: CGFloat = 160
@@ -373,6 +483,14 @@ final class ColumnContainer: NSView {
     /// (no character changes) don't re-trigger textDidChange, so no
     /// recursion risk.
     private func applyEditorParagraphSpacing(extras: [Int: CGFloat], in tv: NSTextView) {
+        // Unconditional re-stamp. A previous version skipped this walk
+        // when the extras dict matched the last applied one — that
+        // saved keystroke work but missed the multi-airport-briefing
+        // case where the result text grows asynchronously across
+        // several data arrivals. Re-stamping each call is cheap
+        // (couple of dict accesses + an attribute set per line), and
+        // the gutter / boundingRect cache layered above handles the
+        // expensive part.
         guard let storage = tv.textStorage else { return }
         let fullText = storage.string as NSString
         let total = fullText.length
@@ -628,14 +746,27 @@ final class DividerStrip: NSView {
 /// and full control over right-alignment + wrapping.
 final class GutterView: NSView {
     var results: [LineResult] = [] {
-        didSet { needsDisplay = true }
+        didSet {
+            if oldValue == results { return }
+            // Drop cache entries for lines no longer present so the
+            // dict can't grow unboundedly across edits. Per-line entries
+            // for lines whose content is unchanged stay valid via the
+            // cacheKey check inside `cachedEntry`.
+            let validLines = Set(results.map { $0.line })
+            resultCache = resultCache.filter { validLines.contains($0.key) }
+            needsDisplay = true
+            refreshToolTips()
+        }
     }
     /// Source-line index → y position (in this view's coordinate
     /// space, equal to editor's because both share ColumnContainer
     /// with frame.origin.y = 0). Updated by ColumnContainer after
     /// every editor layout pass.
     var lineYPositions: [Int: CGFloat] = [:] {
-        didSet { needsDisplay = true }
+        didSet {
+            needsDisplay = true
+            refreshToolTips()
+        }
     }
     var renderValue: (LineResult) -> NSAttributedString = { _ in NSAttributedString() }
     var renderAnnotation: (LineResult) -> NSAttributedString? = { _ in nil }
@@ -644,6 +775,128 @@ final class GutterView: NSView {
 
     let rowHeight: CGFloat = 18
     let horizontalPadding: CGFloat = 18
+
+    /// Per-line cached render output: the materialised NSAttributedString
+    /// plus its measured bounding rect for the current text width. Both
+    /// `computeExtraHeights`, `maxRowBottom`, `draw`, and
+    /// `accessibilityChildren` consult this — without the cache they each
+    /// re-render and re-measure the same result on every keystroke.
+    private struct ResultCacheEntry {
+        let cacheKey: String
+        let value: NSAttributedString
+        let valueRect: CGRect
+        let annotation: NSAttributedString?
+        let annotationRect: CGRect
+    }
+    private var resultCache: [Int: ResultCacheEntry] = [:]
+    private var resultCacheTextWidth: CGFloat = -1
+
+    /// Content key — when this changes for a given line, the cached
+    /// entry is stale and gets recomputed. Tone is folded in because
+    /// it picks the colour for the freshness annotation.
+    private static func cacheKey(for r: LineResult) -> String {
+        let value = r.value ?? ""
+        let annLabel = r.annotation?.label ?? ""
+        let annTone: String
+        switch r.annotation?.tone {
+        case .fresh?:    annTone = "f"
+        case .stale?:    annTone = "s"
+        case .outdated?: annTone = "o"
+        case nil:        annTone = "-"
+        }
+        return "\(r.kind.rawValue)|\(value)|\(annLabel)|\(annTone)"
+    }
+
+    private func cachedEntry(for r: LineResult, textWidth: CGFloat) -> ResultCacheEntry {
+        if resultCacheTextWidth != textWidth {
+            resultCache.removeAll(keepingCapacity: true)
+            resultCacheTextWidth = textWidth
+        }
+        let key = Self.cacheKey(for: r)
+        if let entry = resultCache[r.line], entry.cacheKey == key {
+            return entry
+        }
+        let value = renderValue(r)
+        let valueRect = value.boundingRect(
+            with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        let annotation = renderAnnotation(r)
+        let annotationRect: CGRect
+        if let ann = annotation {
+            annotationRect = ann.boundingRect(
+                with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            )
+        } else {
+            annotationRect = .zero
+        }
+        let entry = ResultCacheEntry(
+            cacheKey: key,
+            value: value,
+            valueRect: valueRect,
+            annotation: annotation,
+            annotationRect: annotationRect
+        )
+        resultCache[r.line] = entry
+        return entry
+    }
+
+    // MARK: - Per-row tool tips
+    //
+    // Hovering a gutter row shows the source-line text that produced the
+    // result. Useful when reverse-engineering an unfamiliar doc and the
+    // result wraps multiple lines (METAR briefings especially) — the
+    // tooltip tells you which input line is behind the output.
+
+    /// Rebuild the per-row tooltip rects from current results + y-positions.
+    /// Called from the setters of both — keeps tooltips in sync with the
+    /// drawn layout without us having to invalidate them by hand.
+    private func refreshToolTips() {
+        removeAllToolTips()
+        let textWidth = max(0, bounds.width - horizontalPadding * 2)
+        guard textWidth > 0 else { return }
+        for r in results {
+            guard let y = lineYPositions[r.line] else { continue }
+            let entry = cachedEntry(for: r, textWidth: textWidth)
+            let height = max(rowHeight, entry.valueRect.height) + entry.annotationRect.height
+            let rect = NSRect(x: 0, y: y, width: bounds.width, height: height)
+            addToolTip(rect, owner: self, userData: nil)
+        }
+    }
+
+    /// macOS tooltip callback. The system invokes this with the cursor's
+    /// in-view point; we hit-test against our row geometry and return the
+    /// source line as the tooltip text. Empty string means "no tooltip
+    /// here," which is what the system uses to suppress display. Marked
+    /// `@objc` because `addToolTip(_:owner:userData:)` looks the method
+    /// up dynamically via the ObjC runtime rather than a Swift protocol.
+    @objc func view(_ view: NSView,
+                    stringForToolTip tag: NSView.ToolTipTag,
+                    point: NSPoint,
+                    userData data: UnsafeMutableRawPointer?) -> String {
+        let textWidth = max(0, bounds.width - horizontalPadding * 2)
+        guard textWidth > 0 else { return "" }
+        for r in results {
+            guard let y = lineYPositions[r.line] else { continue }
+            let entry = cachedEntry(for: r, textWidth: textWidth)
+            let height = max(rowHeight, entry.valueRect.height) + entry.annotationRect.height
+            if point.y >= y && point.y < y + height {
+                let trimmed = r.raw.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return "" }
+                // Prefix the line number so a long doc is easier to
+                // cross-reference; the source line itself is the meat.
+                return "Line \(r.line + 1): \(trimmed)"
+            }
+        }
+        return ""
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = abs(newSize.width - bounds.width) > 0.5
+        super.setFrameSize(newSize)
+        if widthChanged { refreshToolTips() }
+    }
 
     /// Per source line: how much vertical space the result needs *beyond*
     /// the editor's standard line height. Used by the container to push
@@ -654,19 +907,8 @@ final class GutterView: NSView {
         guard textWidth > 0 else { return [:] }
         var extras: [Int: CGFloat] = [:]
         for r in results {
-            let value = renderValue(r)
-            let valueRect = value.boundingRect(
-                with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading]
-            )
-            let annHeight: CGFloat = {
-                guard let ann = renderAnnotation(r) else { return 0 }
-                return ann.boundingRect(
-                    with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading]
-                ).height
-            }()
-            let total = max(rowHeight, valueRect.height) + annHeight
+            let entry = cachedEntry(for: r, textWidth: textWidth)
+            let total = max(rowHeight, entry.valueRect.height) + entry.annotationRect.height
             let extra = total - rowHeight
             if extra > 0.5 { extras[r.line] = extra }
         }
@@ -682,19 +924,8 @@ final class GutterView: NSView {
         var maxY: CGFloat = 0
         for r in results {
             guard let y = lineYPositions[r.line] else { continue }
-            let value = renderValue(r)
-            let valueRect = value.boundingRect(
-                with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading]
-            )
-            let annHeight: CGFloat = {
-                guard let ann = renderAnnotation(r) else { return 0 }
-                return ann.boundingRect(
-                    with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading]
-                ).height
-            }()
-            let rowBottom = y + max(rowHeight, valueRect.height) + annHeight
+            let entry = cachedEntry(for: r, textWidth: textWidth)
+            let rowBottom = y + max(rowHeight, entry.valueRect.height) + entry.annotationRect.height
             if rowBottom > maxY { maxY = rowBottom }
         }
         return maxY
@@ -709,32 +940,23 @@ final class GutterView: NSView {
 
         for r in results {
             guard let y = lineYPositions[r.line] else { continue }
-            let value = renderValue(r)
-            let annotation = renderAnnotation(r)
+            let entry = cachedEntry(for: r, textWidth: textWidth)
 
-            let valueRect = value.boundingRect(
-                with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading]
-            )
             let valueDrawRect = NSRect(
                 x: horizontalPadding,
                 y: y,
                 width: textWidth,
-                height: max(rowHeight, valueRect.height)
+                height: max(rowHeight, entry.valueRect.height)
             )
-            value.draw(with: valueDrawRect,
-                       options: [.usesLineFragmentOrigin, .usesFontLeading])
+            entry.value.draw(with: valueDrawRect,
+                             options: [.usesLineFragmentOrigin, .usesFontLeading])
 
-            if let annotation {
-                let annRect = annotation.boundingRect(
-                    with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading]
-                )
+            if let annotation = entry.annotation {
                 let annDrawRect = NSRect(
                     x: horizontalPadding,
-                    y: y + max(rowHeight, valueRect.height),
+                    y: y + max(rowHeight, entry.valueRect.height),
                     width: textWidth,
-                    height: annRect.height
+                    height: entry.annotationRect.height
                 )
                 annotation.draw(with: annDrawRect,
                                 options: [.usesLineFragmentOrigin, .usesFontLeading])
@@ -764,24 +986,13 @@ final class GutterView: NSView {
         elements.reserveCapacity(results.count)
         for r in results {
             guard let y = lineYPositions[r.line] else { continue }
-            let value = renderValue(r)
-            let annotation = renderAnnotation(r)
-            let valueText = value.string.trimmingCharacters(in: .whitespacesAndNewlines)
-            let annotationText = annotation?.string.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let entry = cachedEntry(for: r, textWidth: textWidth)
+            let valueText = entry.value.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            let annotationText = entry.annotation?.string.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             // Skip empty rows so VO doesn't read "blank" between content.
             if valueText.isEmpty && annotationText.isEmpty { continue }
 
-            let valueRect = value.boundingRect(
-                with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading]
-            )
-            let annHeight: CGFloat = annotation.map {
-                $0.boundingRect(
-                    with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading]
-                ).height
-            } ?? 0
-            let height = max(rowHeight, valueRect.height) + annHeight
+            let height = max(rowHeight, entry.valueRect.height) + entry.annotationRect.height
 
             let element = NSAccessibilityElement()
             element.setAccessibilityRole(.staticText)

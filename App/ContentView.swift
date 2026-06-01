@@ -5,7 +5,6 @@ import os
 enum Pane: String, CaseIterable, Identifiable {
     case calculator   = "Calculator"
     case timezone     = "Timezone"
-    case notes        = "Notes"
     case finance      = "Finance"
     case aviation     = "Aviation"
     case map          = "METAR Map"
@@ -16,7 +15,6 @@ enum Pane: String, CaseIterable, Identifiable {
         switch self {
         case .calculator:   return "function"
         case .timezone:     return "globe"
-        case .notes:        return "note.text"
         case .finance:      return "dollarsign.circle"
         case .aviation:     return "airplane"
         case .map:          return "map"
@@ -39,7 +37,6 @@ enum Pane: String, CaseIterable, Identifiable {
     var enabledKey: String? {
         switch self {
         case .calculator, .timezone: return nil
-        case .notes:                 return "vektor.panes.notes"
         case .finance:               return "vektor.panes.finance"
         case .aviation:              return "vektor.panes.aviation"
         case .map:                   return "vektor.panes.map"
@@ -50,7 +47,6 @@ enum Pane: String, CaseIterable, Identifiable {
     /// Title for the Settings "Tools" section row.
     var moduleTitle: String {
         switch self {
-        case .notes:        return "Notes"
         case .finance:      return "Finance"
         case .aviation:     return "Aviation"
         case .map:          return "METAR Map"
@@ -62,7 +58,6 @@ enum Pane: String, CaseIterable, Identifiable {
     /// One-liner explaining what the module covers, shown under the toggle.
     var moduleDescription: String {
         switch self {
-        case .notes:        return "Markdown notes with hashtag organisation, wiki-links, and image paste."
         case .finance:      return "Loan, mortgage, real-estate deal analysis, tip & split."
         case .aviation:     return "METAR / TAF / ATIS, E6B flight computer, weight & balance."
         case .map:          return "Interactive airport map with live METAR overlay (VFR / MVFR / IFR / LIFR colouring)."
@@ -73,14 +68,14 @@ enum Pane: String, CaseIterable, Identifiable {
 
     /// Group used to lay the pane out in the chrome pane-picker menu.
     /// Three buckets matching the user's mental model:
-    /// • general — daily-driver math tools (Calculator, Timezone, Finance, Notes)
+    /// • general — daily-driver math tools (Calculator, Timezone, Finance)
     /// • aviation — pilot-specific surfaces (Aviation, METAR Map)
     /// • investing — long-form analysis (Stocks)
     var category: Category {
         switch self {
-        case .calculator, .timezone, .notes, .finance: return .general
-        case .aviation, .map:                          return .aviation
-        case .stocks:                                  return .investing
+        case .calculator, .timezone, .finance: return .general
+        case .aviation, .map:                  return .aviation
+        case .stocks:                          return .investing
         }
     }
 
@@ -302,10 +297,12 @@ struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @StateObject private var documents = DocumentStore()
     @StateObject private var calculatorBridge = CalculatorBridge()
-    @StateObject private var notes = NotesStore.notes()
+    // Owns the Stocks pane's loaded-scorecard + watchlist state so it
+    // survives pane navigation — without this, switching to Calculator
+    // and back nukes the analysis and forces a re-Analyze.
+    @StateObject private var stocksSession = StocksPaneSession()
     @State private var selection: Pane = Self.resolveInitialPane()
     @State private var showPaneMenu = false
-    @State private var showDocsPopover = false
     @State private var showManagePanesPopover = false
     @AppStorage("vektor.appearance") private var appearance: String = "system"
 
@@ -347,7 +344,6 @@ struct ContentView: View {
     // Per-module enabled flags. Default to true so existing users don't
     // lose features after an update; new users can trim the menu down
     // from Settings.
-    @AppStorage("vektor.panes.notes")        private var enableNotes        = false
     @AppStorage("vektor.panes.finance")      private var enableFinance      = true
     @AppStorage("vektor.panes.aviation")     private var enableAviation     = true
     @AppStorage("vektor.panes.map")          private var enableMap          = true
@@ -362,7 +358,6 @@ struct ContentView: View {
         Pane.allCases.filter { pane in
             switch pane {
             case .calculator, .timezone: return true
-            case .notes:                 return enableNotes
             case .finance:               return enableFinance
             case .aviation:              return enableAviation
             case .map:                   return enableMap
@@ -444,35 +439,12 @@ struct ContentView: View {
 
             if selection == .calculator {
                 newDocButton
-                showAllDocsButton
-            } else if selection == .notes {
-                newNoteButton
             }
         }
         .padding(.leading, 78)
         .padding(.trailing, 12)
         .frame(height: 38)
         .background(VektorTheme.background)
-    }
-
-    /// New-note button shown in the chrome when Notes is the active
-    /// pane. Lives here (not inside NotesPane) so a SwiftUI `.toolbar`
-    /// modifier doesn't injection a native NSToolbar that fights with
-    /// the custom chrome for the title-bar zone.
-    private var newNoteButton: some View {
-        Button {
-            let note = Note(body: "", createdAt: Date(), modifiedAt: Date())
-            notes.add(note)
-        } label: {
-            Image(systemName: "square.and.pencil")
-                .imageScale(.large)
-                .foregroundStyle(VektorTheme.text)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut("n", modifiers: .command)
-        .help("New note (⌘N)")
     }
 
     private var panePicker: some View {
@@ -571,6 +543,16 @@ struct ContentView: View {
         Menu {
             Button("New calculation") { _ = documents.newDocument() }
                 .keyboardShortcut("n", modifiers: .command)
+            // Pre-built topic pages — pulled in on demand instead of
+            // being force-fed at first launch. Users who want a Math
+            // / Units / Aviation reference around can drop one in here.
+            Menu("From example…") {
+                ForEach(DocumentStore.exampleTemplates) { template in
+                    Button(template.title) {
+                        _ = documents.newDocument(fromExample: template)
+                    }
+                }
+            }
         } label: {
             Image(systemName: "plus")
                 .imageScale(.large)
@@ -587,39 +569,15 @@ struct ContentView: View {
         .accessibilityLabel("New calculation")
     }
 
-    private var showAllDocsButton: some View {
-        Menu {
-            Button("Show all calculations") { showDocsPopover = true }
-                .keyboardShortcut("l", modifiers: .command)
-        } label: {
-            Image(systemName: "line.3.horizontal")
-                .imageScale(.large)
-                .foregroundStyle(VektorTheme.text)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        } primaryAction: {
-            showDocsPopover = true
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Show all calculations (⌘L)")
-        .accessibilityLabel("Show all calculations")
-        .popover(isPresented: $showDocsPopover, arrowEdge: .bottom) {
-            DocumentsPopover(store: documents, isPresented: $showDocsPopover)
-        }
-    }
-
     @ViewBuilder
     private var paneContent: some View {
         switch selection {
         case .calculator:   CalculatorPane(engine: model.engine, error: model.engineError, documents: documents)
         case .timezone:     TimezoneView()
-        case .notes:        NotesPane(store: notes)
         case .finance:      FinancePane()
         case .aviation:     AviationPane()
         case .map:          MapPane()
-        case .stocks:       StocksPane()
+        case .stocks:       StocksPane(session: stocksSession)
         }
     }
 
@@ -641,7 +599,6 @@ struct ContentView: View {
 /// Timezone are shown as static "always shown" rows so users
 /// understand why they're not toggleable.
 private struct ManagePanesView: View {
-    @AppStorage("vektor.panes.notes")    private var enableNotes    = false
     @AppStorage("vektor.panes.finance")  private var enableFinance  = true
     @AppStorage("vektor.panes.aviation") private var enableAviation = true
     @AppStorage("vektor.panes.map")      private var enableMap      = true
@@ -673,7 +630,6 @@ private struct ManagePanesView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 2)
 
-            row(pane: .notes,    binding: $enableNotes)
             row(pane: .finance,  binding: $enableFinance)
             row(pane: .aviation, binding: $enableAviation)
             row(pane: .map,      binding: $enableMap)

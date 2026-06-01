@@ -42,6 +42,104 @@ public enum SuggestionEngine {
         guard let best = candidates.first else { return nil }
         return String(best.dropFirst(partial.count))
     }
+
+    /// Curated "try this" demos shown as ghost text on a fresh blank
+    /// document. Order is deliberately breadth-first across feature
+    /// areas — each step in the rotation lands in a different category
+    /// so a user who hits Tab a few times sees the *range* of what
+    /// Vektor can do, not just three flavours of unit conversion.
+    public static let demoHints: [String] = [
+        // 1. Arithmetic — the universal hook
+        "2 + 2",
+        // 2. Currency — the headline "live data" moment
+        "100 EUR in USD",
+        // 3. Units — the bread-and-butter conversion
+        "10 mi in km",
+        // 4. Time — name a city, get the clock
+        "Berlin time",
+        // 5. Aviation — live METAR with best-runway append
+        "METAR EDDM",
+        // 6. Time-zone conversion (the deep one users miss)
+        "0900 Munich time in Bali",
+        // 7. Math functions
+        "sqrt(2)",
+        // 8. Speed conversion
+        "120 kt in km/h",
+        // 9. Date arithmetic
+        "days between today and 2027-01-01",
+        // 10. Crypto
+        "1 BTC in USD",
+        // 11. Aviation forecast
+        "TAF KSFO",
+        // 12. Decimal-time + glued am/pm + zone-to-zone
+        "4.30pm Tokyo time in New York",
+        // 13. Length conversion (aviation altitude)
+        "60000 ft in m",
+        // 14. Age from a date
+        "age 1990-03-15",
+        // 15. Runway directory
+        "RWY EDDM",
+        // 16. Percent
+        "25% of 80",
+        // 17. Zulu → local conversion
+        "1430 Zulu in HKT",
+        // 18. Pressure conversion
+        "29.92 inHg in hPa",
+        // 19. Sun times for an airport
+        "sun EDDM",
+        // 20. Weekday lookup
+        "weekday 2027-07-04",
+        // 21. Mass conversion
+        "180 lbs in kg",
+        // 22. "now in <zone> + offset"
+        "now in Tokyo + 2h",
+        // 23. Stock quote
+        "stock AAPL",
+        // 24. Date primitive
+        "today",
+        // 25. Temperature conversion
+        "100°F in °C",
+        // 26. Comprehensive aviation briefing
+        "briefing EDMA",
+        // 27. Mixed-unit arithmetic
+        "(5 km + 800 m) in miles",
+        // 28. Duration from a quotient (h/min)
+        "77/55 in hours",
+        // 29. Density / pressure / field altitude
+        "altitude EDDM",
+        // 30. Variables — name a value, reuse it
+        "rent = 1450 EUR",
+        // 31. Roman numerals
+        "MCMXC in dec",
+        // 32. Number bases
+        "0xFF in dec",
+        // 33. Color interchange
+        "#FF9F0F in rgb",
+        // 34. Coordinate distance
+        "distance 48.35,11.78 to 37.62,-122.37",
+        // 35. Business days between
+        "business days between today and 2027-01-01",
+        // 36. Top of descent
+        "TOD FL350 to FL080 at -1500 fpm GS 450",
+        // 37. Wind components
+        "wind 26 EDDM",
+        // 38. Mortgage payment
+        "mortgage 250000 EUR at 3.4% for 25 years",
+        // 39. Compound interest
+        "compound 10000 EUR at 7% for 30 years",
+        // 40. List stats marker (the demo is just the marker —
+        //     the user types the numbers below to see it work)
+        "sum of:",
+    ]
+
+    /// Returns a demo hint for the given rotation index, wrapping
+    /// modulo `demoHints.count`. Negative indices wrap correctly too —
+    /// useful so the caller can pre-increment without bounds-checking.
+    public static func demoHint(rotation: Int) -> String {
+        let n = demoHints.count
+        guard n > 0 else { return "" }
+        return demoHints[((rotation % n) + n) % n]
+    }
 }
 
 /// Physical-dimension grouping. Conversions only make sense between units in

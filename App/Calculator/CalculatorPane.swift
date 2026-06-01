@@ -12,6 +12,8 @@ struct CalculatorPane: View {
 
     @State private var results: [LineResult] = []
     @State private var evaluateTask: Task<Void, Never>? = nil
+    @State private var showingCheatsheet: Bool = false
+    @State private var showingSheets: Bool = false
     /// Width of the editor column inside the unified scroll surface.
     /// Persisted so the user's preferred split survives launches; the
     /// drag handle in the gutter divider writes back to this value.
@@ -47,9 +49,12 @@ struct CalculatorPane: View {
                         renderAnnotation: { Self.renderAnnotation($0) },
                         onPageReferenceClicked: { slug in
                             calculatorBridge.jumpToDocument(slug)
+                        },
+                        resolvePageReference: { slug in
+                            documents.findBySlug(slug) != nil
                         }
                     )
-                    .overlay(alignment: .bottomLeading) { gearButton }
+                    .overlay(alignment: .bottomLeading) { chromeButtons }
                 }
             }
         }
@@ -83,6 +88,9 @@ struct CalculatorPane: View {
         // lines), and triggers `handleMetarLine` to nudge the cache bridge
         // — which itself decides whether to actually go to the network.
         .onReceive(recomputeTick) { _ in evaluate() }
+        .sheet(isPresented: $showingCheatsheet) {
+            CheatsheetView()
+        }
     }
 
     // MARK: - Sheet header
@@ -94,17 +102,43 @@ struct CalculatorPane: View {
     /// layer from the monospaced editor content below.
     private var sheetHeader: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Text("SHEET")
-                Text("·")
-                Text(documents.selected.title.uppercased())
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            HStack(spacing: 10) {
+                pinToggleButton
+
+                Button {
+                    showingSheets.toggle()
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("SHEET")
+                        Text("·")
+                        Text(documents.selected.title.uppercased())
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        // Subtle chevron earns the header its
+                        // "this is interactive" affordance without
+                        // adding a separate button. Visible always at
+                        // low opacity, opaque on hover via macOS's
+                        // default button feedback.
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .semibold))
+                            .opacity(0.6)
+                            .padding(.leading, -3)
+                    }
+                    .font(.system(size: 10.5, weight: .medium))
+                    .tracking(1.6)
+                    .foregroundStyle(VektorTheme.muted)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Switch sheet")
+                .accessibilityLabel("Switch sheet")
+                .popover(isPresented: $showingSheets, arrowEdge: .bottom) {
+                    SheetsPopover(store: documents,
+                                  isPresented: $showingSheets)
+                }
+
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 10.5, weight: .medium))
-            .tracking(1.6)
-            .foregroundStyle(VektorTheme.muted)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
 
@@ -112,24 +146,99 @@ struct CalculatorPane: View {
                 .fill(VektorTheme.divider)
                 .frame(height: 0.5)
         }
+        // Invisible shortcut surface: ⌘⇧1 / ⌘⇧2 / ⌘⇧3 jump to the
+        // first three pinned sheets in pin-order (most-recently-updated
+        // first, matching what the popover shows). Bound in the header
+        // because the calculator pane is where you switch sheets;
+        // putting it here keeps the binding live for as long as the
+        // calculator is on screen.
+        .background(pinnedShortcutsLayer)
+    }
+
+    /// One-click pin toggle for the currently-displayed sheet. Lives in
+    /// the chrome the user is already looking at — the moment they
+    /// think "I want to come back to this" the affordance is in their
+    /// field of view, not buried behind right-click. Outline icon when
+    /// unpinned (muted, low opacity); filled accent when pinned (the
+    /// same visual the docs popover uses for state indication).
+    private var pinToggleButton: some View {
+        let isPinned = documents.selected.isPinned
+        return Button {
+            documents.togglePinned(documents.selectedID)
+        } label: {
+            Image(systemName: isPinned ? "pin.fill" : "pin")
+                .font(.system(size: 10))
+                .foregroundStyle(isPinned ? VektorTheme.accent : VektorTheme.muted)
+                .rotationEffect(.degrees(45))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Pinned state is always at full opacity — it's an indicator
+        // as much as a button. Unpinned fades so the chrome stays
+        // quiet until the user looks for the affordance.
+        .opacity(isPinned ? 1.0 : 0.55)
+        .help(isPinned ? "Unpin sheet" : "Pin sheet to top")
+        .accessibilityLabel(isPinned ? "Unpin sheet" : "Pin sheet to top")
+    }
+
+    private var pinnedShortcutsLayer: some View {
+        let pinned = documents.documents
+            .filter { $0.isPinned }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(3)
+        return VStack(spacing: 0) {
+            ForEach(Array(pinned.enumerated()), id: \.element.id) { index, doc in
+                Button("Switch to pinned sheet \(index + 1)") {
+                    documents.select(doc.id)
+                }
+                .keyboardShortcut(
+                    KeyEquivalent(Character("\(index + 1)")),
+                    modifiers: [.command, .shift]
+                )
+            }
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
 
     // MARK: - Gear
 
-    private var gearButton: some View {
-        Button {
-            openSettings()
-        } label: {
-            Image(systemName: "gearshape")
-                .imageScale(.medium)
-                .foregroundStyle(VektorTheme.muted)
-                .padding(8)
-                .contentShape(Rectangle())
+    private var chromeButtons: some View {
+        HStack(spacing: 0) {
+            Button {
+                openSettings()
+            } label: {
+                Image(systemName: "gearshape")
+                    .imageScale(.medium)
+                    .foregroundStyle(VektorTheme.muted)
+                    .padding(8)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Preferences (⌘,)")
+            .accessibilityLabel("Preferences")
+
+            Button {
+                showingCheatsheet = true
+            } label: {
+                Image(systemName: "questionmark.circle")
+                    .imageScale(.medium)
+                    .foregroundStyle(VektorTheme.muted)
+                    .padding(8)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // ⌘? = ⌘+Shift+/ on US keyboards; SwiftUI maps the literal
+            // "?" character to that combo. Mirrors the cheatsheet
+            // toggle pattern from Numi, Notion, GitHub Desktop.
+            .keyboardShortcut("?", modifiers: .command)
+            .help("Quick reference (⌘?)")
+            .accessibilityLabel("Quick reference")
         }
-        .buttonStyle(.plain)
         .padding(.leading, 6)
         .padding(.bottom, 4)
-        .help("Preferences (⌘,)")
     }
 
     // MARK: - Evaluation
@@ -631,19 +740,67 @@ struct CalculatorPane: View {
 final class AutocompletingTextView: NSTextView {
 
     private var ghostSuggestion: String?
+    /// Distinguishes a unit-completion ghost (Tab/Return both accept) from
+    /// a blank-line demo hint (Tab accepts; Return falls through to a
+    /// regular newline so the user can still add empty lines).
+    private var ghostIsHint: Bool = false
+    /// Monotonic counter the engine uses to pick which demo to show.
+    /// Bumped each time the doc transitions from "has content" to "empty
+    /// again" — so opening a fresh tab shows the next demo in the
+    /// rotation, but typing then deleting then typing again doesn't
+    /// spin the hint wildly.
+    private var hintRotation: Int = 0
 
     /// Closure the editor's enclosing container installs so a click
     /// on an `@reference` token can navigate to another document.
     /// Receives the lowercased slug; no-op when unset.
     var onPageReferenceClicked: ((String) -> Void)?
+    /// Returns `true` if a slug resolves to an existing document.
+    /// When `false` (or unset), clicking the `@ref` falls through to
+    /// default caret placement so the token is still text-editable.
+    /// Mirrors the resolver used by the styling pass — same source of
+    /// truth, refreshed on every SwiftUI render.
+    var resolvePageReference: ((String) -> Bool)?
 
     func recomputeSuggestion() {
         let cursor = selectedRange().location
-        let suggestion = SuggestionEngine.suggest(in: string, cursor: cursor)
-        if suggestion != ghostSuggestion {
+
+        // 1. Unit-completion ghost wins when one is active — that's a
+        //    direct response to the user's typing.
+        if let completion = SuggestionEngine.suggest(in: string, cursor: cursor) {
+            updateGhost(completion, isHint: false)
+            return
+        }
+
+        // 2. Demo hint: only on a fully-empty doc. Once the user has
+        //    typed anything, they've signalled "I know what I want" —
+        //    blank lines in the middle of a real doc are now their
+        //    workspace, not a discovery surface. The hint reappears if
+        //    they wipe the doc clean and start fresh, picking the next
+        //    demo in the rotation so they see breadth across sessions.
+        if isDocumentEmpty() {
+            if !ghostIsHint {
+                hintRotation &+= 1
+            }
+            updateGhost(SuggestionEngine.demoHint(rotation: hintRotation),
+                        isHint: true)
+            return
+        }
+
+        // 3. Nothing to show.
+        updateGhost(nil, isHint: false)
+    }
+
+    private func updateGhost(_ suggestion: String?, isHint: Bool) {
+        if suggestion != ghostSuggestion || isHint != ghostIsHint {
             ghostSuggestion = suggestion
+            ghostIsHint = isHint
             needsDisplay = true
         }
+    }
+
+    private func isDocumentEmpty() -> Bool {
+        string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     override func draw(_ rect: NSRect) {
@@ -671,7 +828,10 @@ final class AutocompletingTextView: NSTextView {
                     at: charIndex,
                     effectiveRange: nil
                 ) as? String
-                if let slug, !slug.isEmpty {
+                // Navigate only when the slug actually points somewhere.
+                // Unresolved @refs fall through to default caret placement
+                // so the user can click into the token to edit it.
+                if let slug, !slug.isEmpty, resolvePageReference?(slug) == true {
                     onPageReferenceClicked?(slug)
                     return
                 }
@@ -719,19 +879,27 @@ final class AutocompletingTextView: NSTextView {
         let x = fragment.origin.x + pointInFragment.x + textContainerOrigin.x
         let y = fragment.origin.y + textContainerOrigin.y
 
+        // Hints render dimmer than completions so the user can tell at a
+        // glance "this is a tip, not the system finishing my word." Same
+        // typeface and weight; just lower alpha.
+        let ghostAlpha: CGFloat = ghostIsHint ? 0.40 : 0.55
+        let chipAlpha: CGFloat = ghostIsHint ? 0.55 : 0.70
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
-            .foregroundColor: NSColor(VektorTheme.muted).withAlphaComponent(0.55)
+            .foregroundColor: NSColor(VektorTheme.muted).withAlphaComponent(ghostAlpha)
         ]
         (suggestion as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
 
         let chipFont = NSFont.monospacedSystemFont(ofSize: 9, weight: .medium)
         let chipAttrs: [NSAttributedString.Key: Any] = [
             .font: chipFont,
-            .foregroundColor: NSColor(VektorTheme.muted).withAlphaComponent(0.7)
+            .foregroundColor: NSColor(VektorTheme.muted).withAlphaComponent(chipAlpha)
         ]
         let ghostSize = (suggestion as NSString).size(withAttributes: attrs)
-        let chip = "  ↩"
+        // Different chip label: ↩ = "press Return to accept this completion",
+        // ⇥ try = "press Tab to drop this demo in" — Return on a hint
+        // keeps its newline meaning instead.
+        let chip = ghostIsHint ? "  ⇥ try" : "  ↩"
         (chip as NSString).draw(
             at: NSPoint(x: x + ghostSize.width, y: y + 2),
             withAttributes: chipAttrs
@@ -741,11 +909,21 @@ final class AutocompletingTextView: NSTextView {
     override func keyDown(with event: NSEvent) {
         if ghostSuggestion != nil {
             switch event.keyCode {
-            case 36, 48:
+            case 36:  // Return
+                // For demo hints, Return keeps its normal meaning (newline)
+                // so the user can still create blank lines without being
+                // forced to commit to whatever hint happens to be showing.
+                // Tab is the dedicated "accept this hint" key.
+                if !ghostIsHint {
+                    acceptSuggestion()
+                    return
+                }
+            case 48:  // Tab — always accepts the current ghost
                 acceptSuggestion()
                 return
-            case 53:
+            case 53:  // Escape — dismiss
                 ghostSuggestion = nil
+                ghostIsHint = false
                 needsDisplay = true
                 return
             default:
@@ -760,6 +938,7 @@ final class AutocompletingTextView: NSTextView {
         let cursor = selectedRange().location
         insertText(suggestion, replacementRange: NSRange(location: cursor, length: 0))
         ghostSuggestion = nil
+        ghostIsHint = false
         needsDisplay = true
     }
 }

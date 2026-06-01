@@ -30,6 +30,9 @@ struct FMPParsed {
     let sectorPE: Double?
     let isin: String?
     let cusip: String?
+    /// Next confirmed earnings announcement (from `/quote.earningsAnnouncement`).
+    /// Nil when the field is absent, malformed, or in the past.
+    let nextEarningsAt: Date?
 
     /// Most-recent statement, used for snapshot-style metrics.
     var latest: Year? { years.first }
@@ -111,6 +114,11 @@ enum FMPParser {
         let symbol: String?
         let price: Double?
         let change: Double?
+        /// FMP returns this as an ISO-8601 string with timezone offset
+        /// ("2025-08-26T20:00:00.000+0000"). Decoded as String here and
+        /// parsed Swift-side so a malformed value doesn't fail the
+        /// whole decode.
+        let earningsAnnouncement: String?
     }
     /// FMP's `historical-price-eod/light` returns either a bare array of
     /// `{date, price}` rows (newer) or an object with `historical: [...]`
@@ -212,6 +220,17 @@ enum FMPParser {
         let exchange = profile?.exchangeShortName
 
         let currentPrice = quoteRows.first?.price
+        // Parse FMP's earnings-announcement string. ISO-8601 with TZ
+        // offset (e.g. "2025-08-26T20:00:00.000+0000"). Drop the result
+        // if it's already in the past — a "next" earnings in the past
+        // means FMP hasn't updated yet, no useful chip to show.
+        let nextEarningsAt: Date? = {
+            guard let raw = quoteRows.first?.earningsAnnouncement, !raw.isEmpty else { return nil }
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let d = f.date(from: raw) else { return nil }
+            return d > Date() ? d : nil
+        }()
 
         // Sort by date ascending — FMP's order isn't consistent.
         let pricesByDate: [(String, Double)] = historicalRows.compactMap {
@@ -246,7 +265,8 @@ enum FMPParser {
             exchangeShortName: exchange,
             sectorPE: sectorPE,
             isin: profile?.isin,
-            cusip: profile?.cusip
+            cusip: profile?.cusip,
+            nextEarningsAt: nextEarningsAt
         )
     }
 }
@@ -403,6 +423,10 @@ struct DCAScorecard {
     let sectorPE: Double?
     let isin: String?
     let cusip: String?
+    /// Next confirmed earnings date — populated from FMP's `/quote`
+    /// when available. Nil for tickers FMP doesn't have one for, or
+    /// when the date is already in the past.
+    let nextEarningsAt: Date?
 
     /// Sum of applicable axes; max is `applicableAxes * 10`.
     var totalScore: Double { axes.compactMap { $0.score }.reduce(0, +) }
@@ -478,7 +502,8 @@ enum DCAScorer {
             sector: p.sector,
             sectorPE: p.sectorPE,
             isin: p.isin,
-            cusip: p.cusip
+            cusip: p.cusip,
+            nextEarningsAt: p.nextEarningsAt
         )
     }
 

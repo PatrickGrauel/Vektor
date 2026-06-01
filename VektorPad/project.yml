@@ -1,0 +1,86 @@
+name: VektorPad
+options:
+  bundleIdPrefix: app.vektor
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+  developmentLanguage: en
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.10"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    DEAD_CODE_STRIPPING: YES
+
+# The engine is SHARED with the macOS app — referenced by relative path,
+# never copied. Bug fixes in VektorEngine/VektorAviation land in both apps.
+packages:
+  VektorEngine:
+    path: ../Packages/VektorEngine
+  VektorAviation:
+    path: ../Packages/VektorAviation
+
+targets:
+  VektorPad:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources
+    resources:
+      - path: Resources/Assets.xcassets
+    dependencies:
+      - package: VektorEngine
+      - package: VektorAviation
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleName: Vektor
+        CFBundleDisplayName: Vektor
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.vektor.VektorPad
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Catalyst is enabled so the iOS code can be compiled + run on this
+        # machine for verification (the iOS Simulator runtime matching the
+        # 26.5 SDK isn't installed). It also gives a Mac build for free.
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+schemes:
+  VektorPad:
+    build:
+      targets:
+        VektorPad: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,520 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0B1BD7B4355E24B7B411FB26 /* DocumentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0589711226E15B0A02B0A5 /* DocumentStore.swift */; };
+		0F3166EC422CA197B3BAB116 /* AvWeightBalance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9AE240E02121A56E6E9380 /* AvWeightBalance.swift */; };
+		0F4CFFD4175AD14B32037991 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205E3E92230CFBF99694D8E3 /* RootView.swift */; };
+		1DA23D21968D57B133106FB1 /* AviationPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7F71B84D8D9B121E6A3F97 /* AviationPane.swift */; };
+		22AF438493220E0947853D19 /* AvMetarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 502306762401FC0CC4071F2D /* AvMetarView.swift */; };
+		268FBCFF1A2D2C826D6A1E8C /* RealEstateMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F76156AA1F4C8F81B01EFC /* RealEstateMath.swift */; };
+		357ED9E8903794DED1545F2B /* VektorEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 1A764EAF3C1D3A3A4D0FF2A8 /* VektorEngine */; };
+		37B472FAFAEC91A7D41BF53D /* FinanceUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE6F5992CBAAC30DCF7D3A11 /* FinanceUI.swift */; };
+		518C0C3BAC024856AE6A18CF /* CalculatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE97B007E0CB11E8C1E7DCA1 /* CalculatorView.swift */; };
+		5D468A31CA1C64AF37CF62B7 /* AvE6BTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 468CDB028D0008B8DBB6B196 /* AvE6BTools.swift */; };
+		6B3D8E04258798AD53E3062B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE7EF0FD6088C659E5AB626 /* AppModel.swift */; };
+		6B419B92BFAA7AE3BB94B7DD /* PersonalFinanceMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB519D795927783B09E2EF6 /* PersonalFinanceMath.swift */; };
+		7479FCE714120BE2F6C7ACB7 /* CityCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99651F31F1D3C57175F50B67 /* CityCatalog.swift */; };
+		758C904D63B98A533D4C2A38 /* FinanceMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8EE5AD4DF526868353ACF7 /* FinanceMath.swift */; };
+		7773BC1CD5D687B4BB3CAE00 /* PersistentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED412A9F98D62C6B142B000 /* PersistentStore.swift */; };
+		7C64A72746D88FD1482390DE /* FinanceLoanForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05AA7C76080A89322E830C83 /* FinanceLoanForm.swift */; };
+		824398DE7903CB2FF72554DD /* FinanceListForms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94542AF96DCDA5682079CD99 /* FinanceListForms.swift */; };
+		85A459148AC24FE52C0FDA49 /* RealEstateForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA25290895A508ADA3AE48A2 /* RealEstateForm.swift */; };
+		86C4200BA2C8B6509DB8392D /* TimezoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56CCD685F98B5BADC059E58A /* TimezoneView.swift */; };
+		87E50EDCFF646DAA3F7160D6 /* PlaceholderPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCA146DE07A9400EF9B34AAE /* PlaceholderPane.swift */; };
+		8C3BC848816F11F17922D975 /* CalcEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9801B65B512C3DE35BB646EC /* CalcEditor.swift */; };
+		A5DF1F30F066DF11CBAD3568 /* VektorAviation in Frameworks */ = {isa = PBXBuildFile; productRef = A010CCC221223C23468E683B /* VektorAviation */; };
+		A7CEF6F77A2FEC808C8EBFAE /* MapPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C72DB2D96A49F6C90909F9FC /* MapPane.swift */; };
+		A7D698BD515559D13C97A702 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DA0FC7D9AAC701F592982DA /* Theme.swift */; };
+		A8148AE7C3DDC37B7BDD39CF /* PinnedCity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C42AD980458224ECC3D7C56 /* PinnedCity.swift */; };
+		BD95104FC6E618F1D5DBE012 /* FinancePane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F2F7587404C437E52481147 /* FinancePane.swift */; };
+		C51647F02601994DF01F90BE /* FinanceSimpleForms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D7BF75602F2BB12E49CD168 /* FinanceSimpleForms.swift */; };
+		DFF211321BDFD6F9BD618700 /* VektorPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1CAC6B580079B82A301C84 /* VektorPadApp.swift */; };
+		EB8957BD1AAAB78F01B403C2 /* Pane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80D1AF12A58D6ED76A8302C /* Pane.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		05AA7C76080A89322E830C83 /* FinanceLoanForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceLoanForm.swift; sourceTree = "<group>"; };
+		1C42AD980458224ECC3D7C56 /* PinnedCity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedCity.swift; sourceTree = "<group>"; };
+		205E3E92230CFBF99694D8E3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		21F76156AA1F4C8F81B01EFC /* RealEstateMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealEstateMath.swift; sourceTree = "<group>"; };
+		2508AE2A5FAA7B5BE8DFFA8B /* VektorEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VektorEngine; path = ../Packages/VektorEngine; sourceTree = SOURCE_ROOT; };
+		2B1CAC6B580079B82A301C84 /* VektorPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VektorPadApp.swift; sourceTree = "<group>"; };
+		3B9AE240E02121A56E6E9380 /* AvWeightBalance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvWeightBalance.swift; sourceTree = "<group>"; };
+		3D7BF75602F2BB12E49CD168 /* FinanceSimpleForms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceSimpleForms.swift; sourceTree = "<group>"; };
+		468CDB028D0008B8DBB6B196 /* AvE6BTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvE6BTools.swift; sourceTree = "<group>"; };
+		502306762401FC0CC4071F2D /* AvMetarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvMetarView.swift; sourceTree = "<group>"; };
+		56CCD685F98B5BADC059E58A /* TimezoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimezoneView.swift; sourceTree = "<group>"; };
+		94542AF96DCDA5682079CD99 /* FinanceListForms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceListForms.swift; sourceTree = "<group>"; };
+		9801B65B512C3DE35BB646EC /* CalcEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalcEditor.swift; sourceTree = "<group>"; };
+		99651F31F1D3C57175F50B67 /* CityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CityCatalog.swift; sourceTree = "<group>"; };
+		9DA0FC7D9AAC701F592982DA /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		9F2F7587404C437E52481147 /* FinancePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinancePane.swift; sourceTree = "<group>"; };
+		A80D1AF12A58D6ED76A8302C /* Pane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pane.swift; sourceTree = "<group>"; };
+		ACE7EF0FD6088C659E5AB626 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		AD8EE5AD4DF526868353ACF7 /* FinanceMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceMath.swift; sourceTree = "<group>"; };
+		AED412A9F98D62C6B142B000 /* PersistentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistentStore.swift; sourceTree = "<group>"; };
+		BA25290895A508ADA3AE48A2 /* RealEstateForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealEstateForm.swift; sourceTree = "<group>"; };
+		BCA146DE07A9400EF9B34AAE /* PlaceholderPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderPane.swift; sourceTree = "<group>"; };
+		C72DB2D96A49F6C90909F9FC /* MapPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPane.swift; sourceTree = "<group>"; };
+		CB0589711226E15B0A02B0A5 /* DocumentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentStore.swift; sourceTree = "<group>"; };
+		CC7F71B84D8D9B121E6A3F97 /* AviationPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AviationPane.swift; sourceTree = "<group>"; };
+		DE97B007E0CB11E8C1E7DCA1 /* CalculatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalculatorView.swift; sourceTree = "<group>"; };
+		E45FD9036FC8BE75B2AF41C5 /* VektorAviation */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VektorAviation; path = ../Packages/VektorAviation; sourceTree = SOURCE_ROOT; };
+		EBB519D795927783B09E2EF6 /* PersonalFinanceMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalFinanceMath.swift; sourceTree = "<group>"; };
+		EE6F5992CBAAC30DCF7D3A11 /* FinanceUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceUI.swift; sourceTree = "<group>"; };
+		FC45067215355C4E075D7618 /* VektorPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VektorPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		19DB38FC809B005F569F7747 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				357ED9E8903794DED1545F2B /* VektorEngine in Frameworks */,
+				A5DF1F30F066DF11CBAD3568 /* VektorAviation in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		026D005E90A8D8EBE36D1ED0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				FC45067215355C4E075D7618 /* VektorPad.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		07E8D65EF0B11F351C80E4DE /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				AE1FC05CDAB0EC4304F7B4ED /* App */,
+				90E38310A05A4F21CC0BA8D0 /* Aviation */,
+				0802253EF3380D692E6F835F /* Calculator */,
+				13A7D4CDFF5E8F4F81086799 /* Finance */,
+				8E40B17F7F058BD0BFCE8ECE /* Map */,
+				F5C3635D8C18CC68566DAC3A /* Shared */,
+				249BA7D3AF66BC408D77AA5C /* Timezone */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		0802253EF3380D692E6F835F /* Calculator */ = {
+			isa = PBXGroup;
+			children = (
+				9801B65B512C3DE35BB646EC /* CalcEditor.swift */,
+				DE97B007E0CB11E8C1E7DCA1 /* CalculatorView.swift */,
+				CB0589711226E15B0A02B0A5 /* DocumentStore.swift */,
+			);
+			path = Calculator;
+			sourceTree = "<group>";
+		};
+		13A7D4CDFF5E8F4F81086799 /* Finance */ = {
+			isa = PBXGroup;
+			children = (
+				94542AF96DCDA5682079CD99 /* FinanceListForms.swift */,
+				05AA7C76080A89322E830C83 /* FinanceLoanForm.swift */,
+				AD8EE5AD4DF526868353ACF7 /* FinanceMath.swift */,
+				9F2F7587404C437E52481147 /* FinancePane.swift */,
+				3D7BF75602F2BB12E49CD168 /* FinanceSimpleForms.swift */,
+				EE6F5992CBAAC30DCF7D3A11 /* FinanceUI.swift */,
+				AED412A9F98D62C6B142B000 /* PersistentStore.swift */,
+				EBB519D795927783B09E2EF6 /* PersonalFinanceMath.swift */,
+				BA25290895A508ADA3AE48A2 /* RealEstateForm.swift */,
+				21F76156AA1F4C8F81B01EFC /* RealEstateMath.swift */,
+			);
+			path = Finance;
+			sourceTree = "<group>";
+		};
+		249BA7D3AF66BC408D77AA5C /* Timezone */ = {
+			isa = PBXGroup;
+			children = (
+				99651F31F1D3C57175F50B67 /* CityCatalog.swift */,
+				1C42AD980458224ECC3D7C56 /* PinnedCity.swift */,
+				56CCD685F98B5BADC059E58A /* TimezoneView.swift */,
+			);
+			path = Timezone;
+			sourceTree = "<group>";
+		};
+		8E40B17F7F058BD0BFCE8ECE /* Map */ = {
+			isa = PBXGroup;
+			children = (
+				C72DB2D96A49F6C90909F9FC /* MapPane.swift */,
+			);
+			path = Map;
+			sourceTree = "<group>";
+		};
+		90E38310A05A4F21CC0BA8D0 /* Aviation */ = {
+			isa = PBXGroup;
+			children = (
+				468CDB028D0008B8DBB6B196 /* AvE6BTools.swift */,
+				CC7F71B84D8D9B121E6A3F97 /* AviationPane.swift */,
+				502306762401FC0CC4071F2D /* AvMetarView.swift */,
+				3B9AE240E02121A56E6E9380 /* AvWeightBalance.swift */,
+			);
+			path = Aviation;
+			sourceTree = "<group>";
+		};
+		9E945AD4E68760C0B70F9C5B = {
+			isa = PBXGroup;
+			children = (
+				AE0A722CAA00F6C703299AF1 /* Packages */,
+				07E8D65EF0B11F351C80E4DE /* Sources */,
+				026D005E90A8D8EBE36D1ED0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AE0A722CAA00F6C703299AF1 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				E45FD9036FC8BE75B2AF41C5 /* VektorAviation */,
+				2508AE2A5FAA7B5BE8DFFA8B /* VektorEngine */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		AE1FC05CDAB0EC4304F7B4ED /* App */ = {
+			isa = PBXGroup;
+			children = (
+				ACE7EF0FD6088C659E5AB626 /* AppModel.swift */,
+				A80D1AF12A58D6ED76A8302C /* Pane.swift */,
+				205E3E92230CFBF99694D8E3 /* RootView.swift */,
+				9DA0FC7D9AAC701F592982DA /* Theme.swift */,
+				2B1CAC6B580079B82A301C84 /* VektorPadApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		F5C3635D8C18CC68566DAC3A /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				BCA146DE07A9400EF9B34AAE /* PlaceholderPane.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0B809E60FB3188DEF1416739 /* VektorPad */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA8AC47DAB7874EFD7EE7C33 /* Build configuration list for PBXNativeTarget "VektorPad" */;
+			buildPhases = (
+				488C422925F55009FAF33678 /* Sources */,
+				19DB38FC809B005F569F7747 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VektorPad;
+			packageProductDependencies = (
+				1A764EAF3C1D3A3A4D0FF2A8 /* VektorEngine */,
+				A010CCC221223C23468E683B /* VektorAviation */,
+			);
+			productName = VektorPad;
+			productReference = FC45067215355C4E075D7618 /* VektorPad.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		87C8564DB3426A955514B69E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					0B809E60FB3188DEF1416739 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 2D4271A52CD30E7E5DFDC3C7 /* Build configuration list for PBXProject "VektorPad" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 9E945AD4E68760C0B70F9C5B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				91B9E116F8BAB50F337A076D /* XCLocalSwiftPackageReference "../Packages/VektorAviation" */,
+				13AA0D2E12E9EFDD4D55AA30 /* XCLocalSwiftPackageReference "../Packages/VektorEngine" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 026D005E90A8D8EBE36D1ED0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0B809E60FB3188DEF1416739 /* VektorPad */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		488C422925F55009FAF33678 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6B3D8E04258798AD53E3062B /* AppModel.swift in Sources */,
+				5D468A31CA1C64AF37CF62B7 /* AvE6BTools.swift in Sources */,
+				22AF438493220E0947853D19 /* AvMetarView.swift in Sources */,
+				0F3166EC422CA197B3BAB116 /* AvWeightBalance.swift in Sources */,
+				1DA23D21968D57B133106FB1 /* AviationPane.swift in Sources */,
+				8C3BC848816F11F17922D975 /* CalcEditor.swift in Sources */,
+				518C0C3BAC024856AE6A18CF /* CalculatorView.swift in Sources */,
+				7479FCE714120BE2F6C7ACB7 /* CityCatalog.swift in Sources */,
+				0B1BD7B4355E24B7B411FB26 /* DocumentStore.swift in Sources */,
+				824398DE7903CB2FF72554DD /* FinanceListForms.swift in Sources */,
+				7C64A72746D88FD1482390DE /* FinanceLoanForm.swift in Sources */,
+				758C904D63B98A533D4C2A38 /* FinanceMath.swift in Sources */,
+				BD95104FC6E618F1D5DBE012 /* FinancePane.swift in Sources */,
+				C51647F02601994DF01F90BE /* FinanceSimpleForms.swift in Sources */,
+				37B472FAFAEC91A7D41BF53D /* FinanceUI.swift in Sources */,
+				A7CEF6F77A2FEC808C8EBFAE /* MapPane.swift in Sources */,
+				EB8957BD1AAAB78F01B403C2 /* Pane.swift in Sources */,
+				7773BC1CD5D687B4BB3CAE00 /* PersistentStore.swift in Sources */,
+				6B419B92BFAA7AE3BB94B7DD /* PersonalFinanceMath.swift in Sources */,
+				A8148AE7C3DDC37B7BDD39CF /* PinnedCity.swift in Sources */,
+				87E50EDCFF646DAA3F7160D6 /* PlaceholderPane.swift in Sources */,
+				85A459148AC24FE52C0FDA49 /* RealEstateForm.swift in Sources */,
+				268FBCFF1A2D2C826D6A1E8C /* RealEstateMath.swift in Sources */,
+				0F4CFFD4175AD14B32037991 /* RootView.swift in Sources */,
+				A7D698BD515559D13C97A702 /* Theme.swift in Sources */,
+				86C4200BA2C8B6509DB8392D /* TimezoneView.swift in Sources */,
+				DFF211321BDFD6F9BD618700 /* VektorPadApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		38795B28ECAE5B5F0811DC94 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		7B90B74DA4385B2B8570D323 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.vektor.VektorPad;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		CE8EA77F11A6F3DB62DCF28D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.vektor.VektorPad;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EF6ABD025EC8D130CA1BF593 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2D4271A52CD30E7E5DFDC3C7 /* Build configuration list for PBXProject "VektorPad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				38795B28ECAE5B5F0811DC94 /* Debug */,
+				EF6ABD025EC8D130CA1BF593 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AA8AC47DAB7874EFD7EE7C33 /* Build configuration list for PBXNativeTarget "VektorPad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CE8EA77F11A6F3DB62DCF28D /* Debug */,
+				7B90B74DA4385B2B8570D323 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		13AA0D2E12E9EFDD4D55AA30 /* XCLocalSwiftPackageReference "../Packages/VektorEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/VektorEngine;
+		};
+		91B9E116F8BAB50F337A076D /* XCLocalSwiftPackageReference "../Packages/VektorAviation" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/VektorAviation;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A764EAF3C1D3A3A4D0FF2A8 /* VektorEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VektorEngine;
+		};
+		A010CCC221223C23468E683B /* VektorAviation */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VektorAviation;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 87C8564DB3426A955514B69E /* Project object */;
+}

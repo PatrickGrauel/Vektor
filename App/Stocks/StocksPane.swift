@@ -6,7 +6,11 @@ import AppKit
 /// financials from financialmodelingprep.com, scores six axes 0–10, and
 /// renders both a textual scorecard and a radar chart.
 struct StocksPane: View {
-    @AppStorage("vektor.stocks.lastTicker") private var lastTicker: String = ""
+    /// Persistent state for this pane — survives navigation away/back so
+    /// a loaded scorecard isn't thrown out when the user pops over to
+    /// the Calculator. Owned by ContentView, passed in here.
+    @ObservedObject var session: StocksPaneSession
+
     @AppStorage("vektor.stocks.recentTickers") private var recentTickersRaw: String = ""
     /// Whether an FMP key is currently stored. Mirrored into UserDefaults
     /// by `KeychainStorage.set/delete` so we can answer "is the user set
@@ -23,35 +27,18 @@ struct StocksPane: View {
     @AppStorage(FMPPlan.customCapKey) private var customCap: Int = 240
     @StateObject private var monitor = StocksConnectionMonitor.shared
 
-    @State private var ticker: String = ""
-    @State private var loading = false
-    @State private var analysisError: AnalysisError?
-    @State private var scorecard: DCAScorecard?
     @State private var budget: FMPClient.BudgetSnapshot?
-    @State private var task: Task<Void, Never>?
     /// Typeahead state — when the user types something more like a
     /// name than a ticker (e.g. "Tesla") we debounce a fuzzy search
-    /// against FMP and show matches in a popover.
+    /// against FMP and show matches in a popover. Search popover state
+    /// is intentionally NOT in the session — it's transient UI that
+    /// should reset every time you come back to the pane.
     @State private var searchHits: [FMPClient.SearchHit] = []
     @State private var searchTask: Task<Void, Never>?
     @State private var showSuggestions = false
     /// Manage popover — the in-pane shortcut to the key / plan / usage
     /// view, anchored to the footer status bar.
     @State private var showManage = false
-    /// Which axis rows are expanded into their drill-down view. Backed
-    /// by `Axis` directly so toggling survives any re-renders that
-    /// reorder the cards.
-    @State private var expandedAxes: Set<Axis> = []
-
-    /// Result-side error classification. Each case maps to a different
-    /// UI shape: coverage-gap gets the calm "not in your plan" card,
-    /// invalid-key bounces the user to the setup card, the rest render
-    /// as the small error chrome.
-    private enum AnalysisError: Equatable {
-        case coverageGap(symbol: String)
-        case invalidKey
-        case generic(String)
-    }
 
     private var recents: [String] {
         recentTickersRaw
@@ -68,13 +55,17 @@ struct StocksPane: View {
                 // discover what FMP is or why a Mac app wants a key.
                 setupCardSection
             } else {
+                if !session.watchlist.tickers.isEmpty {
+                    watchlistSection
+                }
+
                 inputSection
 
-                if let err = analysisError {
+                if let err = session.analysisError {
                     errorSection(for: err)
                 }
 
-                if loading {
+                if session.loading {
                     Section {
                         HStack {
                             ProgressView().controlSize(.small)
@@ -85,7 +76,7 @@ struct StocksPane: View {
                     }
                 }
 
-                if let card = scorecard {
+                if let card = session.scorecard {
                     resultsSections(card: card)
                 }
             }
@@ -97,12 +88,16 @@ struct StocksPane: View {
             footerBar
         }
         .onAppear {
-            // Restore the last ticker without auto-analysing — analysis
-            // is user-driven and budget-consuming.
-            if ticker.isEmpty, !lastTicker.isEmpty {
-                ticker = lastTicker
-            }
+            // Session hydrates `ticker` from UserDefaults at init time,
+            // so the input box is already populated when we get here.
+            // Scorecard survives via the session too — no re-analysis
+            // needed if the user just popped over to another pane.
             Task { await refreshBudget() }
+            // Best-effort watchlist quote refresh. Internal stale-window
+            // (5 min) prevents re-hitting on rapid re-opens.
+            if hasFMPKey {
+                Task { await session.watchlist.refreshIfStale() }
+            }
         }
         .onChange(of: hasFMPKey) { _, present in
             // Sync the connection-status indicator + FMPClient's cached
@@ -127,7 +122,10 @@ struct StocksPane: View {
         .onChange(of: customCap) { _, _ in
             Task { await refreshBudget() }
         }
-        .onDisappear { task?.cancel() }
+        // No onDisappear cancellation: an in-flight analysis lives on
+        // the session, so switching panes mid-fetch lets it finish in
+        // the background. The user comes back to a populated scorecard
+        // instead of having to re-trigger.
     }
 
     // MARK: - Setup card
@@ -200,11 +198,11 @@ struct StocksPane: View {
         Section {
             LabeledContent("Ticker or company") {
                 HStack(spacing: 8) {
-                    TextField("", text: $ticker, prompt: Text("Tesla, KO, AAPL…"))
+                    TextField("", text: $session.ticker, prompt: Text("Tesla, KO, AAPL…"))
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 220)
                         .labelsHidden()
-                        .onChange(of: ticker) { _, new in
+                        .onChange(of: session.ticker) { _, new in
                             // Don't upper-case on every keystroke any
                             // more — typeahead needs lowercase queries
                             // to work ("Tesla" → matches). analyse()
@@ -221,7 +219,8 @@ struct StocksPane: View {
                         }
                     Button("Analyze") { analyse() }
                         .keyboardShortcut(.return, modifiers: [])
-                        .disabled(ticker.trimmingCharacters(in: .whitespaces).isEmpty || loading)
+                        .disabled(session.ticker.trimmingCharacters(in: .whitespaces).isEmpty || session.loading)
+                    watchlistStarButton
                 }
             }
             if !recents.isEmpty {
@@ -229,7 +228,7 @@ struct StocksPane: View {
                     HStack(spacing: 6) {
                         ForEach(recents, id: \.self) { t in
                             Button(t) {
-                                ticker = t
+                                session.ticker = t
                                 analyse()
                             }
                             .buttonStyle(.plain)
@@ -251,10 +250,116 @@ struct StocksPane: View {
         }
     }
 
+    // MARK: - Radar legend
+
+    /// Small caption under the radar chart explaining the dashed band.
+    /// Two lozenges (one for the data polygon, one for the benchmark
+    /// band) act as a tiny inline legend so users don't have to guess
+    /// what the muted dashed shape means.
+    private var radarBenchmarkLegend: some View {
+        HStack(spacing: 14) {
+            legendSwatch(color: VektorTheme.accent,
+                         dashed: false,
+                         label: "This ticker")
+            legendSwatch(color: VektorTheme.muted.opacity(0.65),
+                         dashed: true,
+                         label: "Buffett-quality baseline (7/10)")
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .padding(.bottom, 6)
+        .help("Every axis poking outside the dashed band meets a generic Buffett-quality threshold (score ≥ 7). Axes inside the band are under-performing on that dimension.")
+    }
+
+    private func legendSwatch(color: Color, dashed: Bool, label: String) -> some View {
+        HStack(spacing: 5) {
+            Canvas { ctx, size in
+                var path = Path()
+                path.move(to: CGPoint(x: 0, y: size.height / 2))
+                path.addLine(to: CGPoint(x: size.width, y: size.height / 2))
+                let style = dashed
+                    ? StrokeStyle(lineWidth: 1.2, dash: [3, 3])
+                    : StrokeStyle(lineWidth: 1.5)
+                ctx.stroke(path, with: .color(color), style: style)
+            }
+            .frame(width: 18, height: 4)
+            Text(label)
+        }
+    }
+
+    // MARK: - Watchlist
+
+    /// Star icon next to the Analyze button. Toggle for "is this ticker
+    /// in my watchlist?" — filled accent when starred, hollow muted
+    /// when not. Disabled when the input is empty.
+    private var watchlistStarButton: some View {
+        let trimmed = session.ticker.trimmingCharacters(in: .whitespaces).uppercased()
+        let isStarred = session.watchlist.contains(trimmed)
+        return Button {
+            session.watchlist.toggle(trimmed)
+        } label: {
+            Image(systemName: isStarred ? "star.fill" : "star")
+                .imageScale(.medium)
+                .foregroundStyle(isStarred ? VektorTheme.accent : VektorTheme.muted)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(trimmed.isEmpty)
+        .help(isStarred ? "Remove from watchlist" : "Add to watchlist")
+        .accessibilityLabel(isStarred ? "Remove from watchlist" : "Add to watchlist")
+    }
+
+    /// Watchlist grid + refresh control. Rendered only when there's at
+    /// least one starred ticker, so the pane stays clean for users who
+    /// haven't starred anything yet.
+    private var watchlistSection: some View {
+        Section {
+            WatchlistGrid(
+                tickers: session.watchlist.tickers,
+                quotes: session.watchlist.quotes,
+                currentTicker: session.ticker.trimmingCharacters(in: .whitespaces).uppercased(),
+                onSelect: { t in
+                    session.ticker = t
+                    analyse()
+                },
+                onUnstar: { t in
+                    session.watchlist.remove(t)
+                }
+            )
+            .padding(.vertical, 2)
+        } header: {
+            HStack(spacing: 8) {
+                Text("Watchlist")
+                Spacer(minLength: 0)
+                if session.watchlist.refreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button {
+                        Task { await session.watchlist.refreshAll() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.caption2)
+                            .foregroundStyle(VektorTheme.muted)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Refresh watchlist quotes")
+                    .accessibilityLabel("Refresh watchlist quotes")
+                }
+            }
+        } footer: {
+            Text("Right-click a tile to remove. Click any tile to analyse that ticker. Quotes auto-refresh on pane open (5-minute freshness window) — manual refresh available top-right.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Error chrome
 
     @ViewBuilder
-    private func errorSection(for err: AnalysisError) -> some View {
+    private func errorSection(for err: StocksAnalysisError) -> some View {
         switch err {
         case .coverageGap(let symbol):
             coverageGapCard(symbol: symbol)
@@ -364,7 +469,7 @@ struct StocksPane: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                // Row 3 — fair-value verdict + securities identifiers.
+                // Row 3 — fair-value verdict + earnings date + securities identifiers.
                 HStack(spacing: 8) {
                     if card.fairValueVerdict != .unknown {
                         FairValueBadge(
@@ -373,6 +478,9 @@ struct StocksPane: View {
                             sectorPE: card.sectorPE,
                             sector: card.sector
                         )
+                    }
+                    if let next = card.nextEarningsAt {
+                        EarningsBadge(date: next)
                     }
                     if let wkn = card.wkn {
                         IdentifierChip(label: "WKN", value: wkn)
@@ -404,12 +512,16 @@ struct StocksPane: View {
         }
 
         Section {
-            HStack {
-                Spacer()
-                RadarChart(axes: card.axes)
-                Spacer()
+            VStack(spacing: 6) {
+                HStack {
+                    Spacer()
+                    RadarChart(axes: card.axes)
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+
+                radarBenchmarkLegend
             }
-            .padding(.vertical, 8)
         }
 
         Section("Scores") {
@@ -420,7 +532,7 @@ struct StocksPane: View {
     }
 
     private func axisRow(_ axis: AxisScore, card: DCAScorecard) -> some View {
-        let isExpanded = expandedAxes.contains(axis.axis)
+        let isExpanded = session.expandedAxes.contains(axis.axis)
         // Only allow expansion if there's something more to show than
         // the collapsed row already has — i.e. trend data is present.
         let canExpand = axis.trend != nil
@@ -431,8 +543,8 @@ struct StocksPane: View {
             Button {
                 guard canExpand else { return }
                 withAnimation(.easeInOut(duration: 0.18)) {
-                    if isExpanded { expandedAxes.remove(axis.axis) }
-                    else          { expandedAxes.insert(axis.axis) }
+                    if isExpanded { session.expandedAxes.remove(axis.axis) }
+                    else          { session.expandedAxes.insert(axis.axis) }
                 }
             } label: {
                 HStack(alignment: .center) {
@@ -546,21 +658,21 @@ struct StocksPane: View {
     // MARK: - Analysis
 
     private func analyse() {
-        task?.cancel()
+        session.task?.cancel()
         searchTask?.cancel()
         showSuggestions = false
-        let symbol = ticker.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let symbol = session.ticker.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !symbol.isEmpty else { return }
         // Snap the visible field to the upper-cased symbol so the row
         // header in the result reads the same as what the user sees.
-        ticker = symbol
-        lastTicker = symbol
+        session.ticker = symbol
+        session.rememberLastAnalysed(symbol)
         recordRecent(symbol)
-        analysisError = nil
-        loading = true
-        expandedAxes.removeAll()   // new analysis → start collapsed
+        session.analysisError = nil
+        session.loading = true
+        session.expandedAxes.removeAll()   // new analysis → start collapsed
 
-        task = Task { @MainActor in
+        session.task = Task { @MainActor in
             // FMPClient reads the Keychain lazily on its first API call,
             // gated by `KeychainStorage.hasKey(...)` — no eager fetch
             // needed here. We only need to ensure the in-actor cache is
@@ -572,18 +684,18 @@ struct StocksPane: View {
                 let parsed = try FMPParser.parse(symbol: symbol, bundle: bundle)
                 let card = DCAScorer.score(parsed, bundle: bundle)
                 if Task.isCancelled { return }
-                scorecard = card
+                session.scorecard = card
             } catch {
                 if Task.isCancelled { return }
-                analysisError = classify(error)
-                scorecard = nil
+                session.analysisError = classify(error)
+                session.scorecard = nil
             }
-            loading = false
+            session.loading = false
             await refreshBudget()
         }
     }
 
-    private func classify(_ error: Error) -> AnalysisError {
+    private func classify(_ error: Error) -> StocksAnalysisError {
         if let fmp = error as? FMPClient.FMPError {
             switch fmp {
             case .symbolNotCovered(let s):
@@ -653,7 +765,7 @@ struct StocksPane: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(searchHits) { hit in
                 Button {
-                    ticker = hit.symbol
+                    session.ticker = hit.symbol
                     showSuggestions = false
                     analyse()
                 } label: {

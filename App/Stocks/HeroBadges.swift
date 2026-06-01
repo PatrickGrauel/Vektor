@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Three small chip-style badges shown next to the symbol and the
 /// score in the Stocks pane hero verdict: current price, trailing
@@ -51,26 +52,112 @@ struct ChangeBadge: View {
 
 /// Securities-identifier chip — WKN / ISIN / CUSIP. Same capsule shape
 /// as the other badges but a neutral colour so the catalogue codes
-/// don't compete for attention with the price + change.
+/// don't compete for attention with the price + change. Click anywhere
+/// on the chip to copy the value to the clipboard — common workflow
+/// for German investors pasting an ISIN into a broker search box.
+/// Brief "Copied" flash gives feedback that the click landed.
 struct IdentifierChip: View {
     let label: String
     let value: String
 
+    @State private var justCopied: Bool = false
+
     var body: some View {
-        HStack(spacing: 3) {
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(VektorTheme.muted)
-            Text(value)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(VektorTheme.text)
-                .textSelection(.enabled)
+        Button(action: copy) {
+            HStack(spacing: 3) {
+                Text(justCopied ? "Copied" : label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(justCopied ? VektorTheme.statusGood : VektorTheme.muted)
+                Text(value)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(VektorTheme.text)
+                Image(systemName: justCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(justCopied ? VektorTheme.statusGood : VektorTheme.muted)
+                    .padding(.leading, 1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(VektorTheme.codeSurface)
+            .clipShape(Capsule())
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help("Click to copy \(label) — \(value)")
+        .accessibilityLabel("\(label) \(value). Click to copy.")
+    }
+
+    private func copy() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+        // Brief "Copied" flash so the user sees the click landed.
+        withAnimation(.easeOut(duration: 0.15)) { justCopied = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            await MainActor.run {
+                withAnimation(.easeIn(duration: 0.25)) { justCopied = false }
+            }
+        }
+    }
+}
+
+/// Upcoming-earnings chip — date + countdown ("Aug 26 · in 12 days").
+/// Tints amber when the announcement is within a week (high-event-risk
+/// window when buying or holding usually warrants extra thought) and
+/// muted otherwise. Tooltip exposes the exact ISO date/time.
+struct EarningsBadge: View {
+    let date: Date
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "calendar")
+                .font(.system(size: 9, weight: .semibold))
+            Text(label)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+        }
+        .foregroundStyle(colour)
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(VektorTheme.codeSurface)
+        .background(colour.opacity(0.12))
         .clipShape(Capsule())
-        .accessibilityLabel("\(label) \(value)")
+        .help(tooltip)
+        .accessibilityLabel("Next earnings \(label)")
+    }
+
+    private var daysUntil: Int {
+        let cal = Calendar(identifier: .gregorian)
+        let now = cal.startOfDay(for: Date())
+        let then = cal.startOfDay(for: date)
+        return cal.dateComponents([.day], from: now, to: then).day ?? 0
+    }
+
+    private var label: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        let datePart = f.string(from: date)
+        let n = daysUntil
+        let countdown: String
+        switch n {
+        case 0:   countdown = "today"
+        case 1:   countdown = "tomorrow"
+        default:  countdown = "in \(n) days"
+        }
+        return "\(datePart) · \(countdown)"
+    }
+
+    private var colour: Color {
+        // Within a week → amber; further out → muted neutral. Past
+        // dates shouldn't reach here (parser already filters them).
+        daysUntil <= 7 ? VektorTheme.statusCaution : VektorTheme.muted
+    }
+
+    private var tooltip: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, d MMM yyyy 'at' HH:mm zzz"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return "Next earnings announcement: \(f.string(from: date))"
     }
 }
 
