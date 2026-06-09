@@ -5,25 +5,25 @@ import SwiftUI
 /// click shows a small menu. The icon is a hand-drawn template glyph of the
 /// equals-with-heading-bug mark so it adapts to light / dark menu bars.
 @MainActor
-final class MenuBarController: NSObject {
+final class MenuBarController: NSObject, NSMenuDelegate {
     static let shared = MenuBarController()
 
     private var statusItem: NSStatusItem?
+    /// The calculator surface. A non-activating `NSPanel` (not a SwiftUI
+    /// WindowGroup window) so it can be summoned as the key window —
+    /// receiving keystrokes for an immediate calculation — *without*
+    /// activating the app or switching Spaces. That's what lets it appear
+    /// over another app's full-screen Space every time, which the old
+    /// `NSApp.activate`-based summon couldn't do reliably.
+    private var panel: NSPanel?
+    /// One-shot observer that drops the panel back to `.normal` when the
+    /// user clicks away, so it doesn't float over everything forever
+    /// (unless Always-on-Top is on). Re-armed on each summon.
+    private var resignKeyObserver: NSObjectProtocol?
     /// Cached menu so we can re-attach it for right-click then detach.
     private lazy var contextMenu: NSMenu = makeMenu()
-    /// Observer that drops the window level back to `.normal` when the
-    /// user clicks away. Installed when the window is summoned into a
-    /// fullscreen Space; nilled out after firing once. Stored so we
-    /// don't leak observers across multiple summon → dismiss cycles.
-    private var resignKeyObserver: NSObjectProtocol?
 
-    /// Set by WindowOpenerBridge once the WindowGroup scene has appeared.
-    /// Calling this asks SwiftUI to (re)open the "main" window — needed
-    /// because closing the window via the red X destroys the NSWindow
-    /// and nothing in AppKit can resurrect a SwiftUI WindowGroup window.
-    var openMainWindow: (() -> Void)?
-
-    /// Set by WindowOpenerBridge from a `@Environment(\.openSettings)`
+    /// Set by the panel's root view from a `@Environment(\.openSettings)`
     /// closure. Using SwiftUI's native action is much more reliable than
     /// the legacy `showSettingsWindow:` / `showPreferencesWindow:`
     /// selector dance — those depend on Apple's private responder
@@ -62,12 +62,31 @@ final class MenuBarController: NSObject {
     }
 
     private func showMenu(for button: NSStatusBarButton) {
-        // Rebuild every time so the "Menu Bar Only Mode" checkmark stays
-        // accurate. Pop it up manually rather than attaching to statusItem
-        // (which would also intercept left-clicks).
+        // Present through the status item's *native* menu mechanism so the
+        // menu drops flush from the menu bar and highlights the icon —
+        // instead of the detached, free-floating look `menu.popUp(…)` gives.
+        // We can't leave the menu permanently assigned (that would make a
+        // plain left-click open the menu too, killing the window toggle),
+        // so we attach it just for this interaction and detach again in
+        // `menuDidClose`. Rebuilt each time so the "Menu Bar Only Mode"
+        // checkmark stays accurate.
+        guard let statusItem else { return }
         let menu = makeMenu()
-        let location = NSPoint(x: 0, y: button.bounds.height + 4)
-        menu.popUp(positioning: nil, at: location, in: button)
+        menu.delegate = self
+        statusItem.menu = menu
+        button.performClick(nil)
+    }
+
+    // MARK: - NSMenuDelegate
+
+    func menuDidClose(_ menu: NSMenu) {
+        // Detach so the next left-click routes to `handleClick` (toggle)
+        // again rather than re-opening the menu. Deferred a runloop tick:
+        // clearing inside the close notification can re-enter the click
+        // machinery on some macOS versions.
+        DispatchQueue.main.async { [weak self] in
+            self?.statusItem?.menu = nil
+        }
     }
 
     private func makeMenu() -> NSMenu {
@@ -100,35 +119,93 @@ final class MenuBarController: NSObject {
         window.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
     }
 
-    /// Elevate the window to `.floating` so it can overlay a fullscreen
-    /// app's window. The cross-space collection flags above let the
-    /// window *join* a fullscreen Space, but at `.normal` level the
-    /// fullscreen window still sits on top. `.floating` puts us above.
-    ///
-    /// On `didResignKey` (the user clicked back to the fullscreen app
-    /// or another window), restore `.normal` so the window doesn't
-    /// permanently float over everything. Users who want the
-    /// permanent-on-top behavior can still enable Always-on-Top in
-    /// Settings — that path uses `WindowLevelApplier` and keeps the
-    /// level pinned regardless of this resign-key restoration.
+    /// Lazily build the panel that hosts the calculator. Created once and
+    /// reused — `orderOut` hides it, `showPanel` brings it back, and its
+    /// SwiftUI state (open document, current pane) survives in between.
+    private func makePanelIfNeeded() {
+        guard panel == nil else { return }
+
+        let hosting = NSHostingController(rootView: PanelRootView())
+        let panel = QuickPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable,
+                        .fullSizeContentView, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.contentViewController = hosting
+        panel.title = "Vektor"
+        // Reproduce the old WindowGroup's `.hiddenTitleBar`: transparent
+        // title bar, content drawn full height, traffic lights overlaying
+        // the top-left (ContentView's chrome pads 78pt to clear them).
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        // An NSPanel hides itself when the app deactivates *by default* —
+        // fatal for a non-activating panel whose app is never "active."
+        panel.hidesOnDeactivate = false
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        Self.prepareForCrossSpaceSummon(panel)
+        panel.contentMinSize = NSSize(width: 760, height: 520)
+
+        // A floating / accessory-mode panel can't meaningfully miniaturize
+        // to the Dock (which in Menu-Bar-Only mode isn't even there), so the
+        // yellow button would just no-op. Retarget it to hide the panel —
+        // the same "remove the interface" outcome as the menu-bar toggle.
+        if let minimize = panel.standardWindowButton(.miniaturizeButton) {
+            minimize.target = self
+            minimize.action = #selector(hidePanel)
+        }
+
+        // Restore the last frame; first launch centers a default size.
+        if !panel.setFrameUsingName("VektorMainPanel") {
+            panel.setContentSize(NSSize(width: 860, height: 560))
+            panel.center()
+        }
+        panel.setFrameAutosaveName("VektorMainPanel")
+
+        self.panel = panel
+    }
+
+    /// Create (if needed) and summon the panel. Deliberately *no*
+    /// `NSApp.activate(…)`: a `.nonactivatingPanel` becomes the key window
+    /// — and so receives typing — on `makeKeyAndOrderFront` *without*
+    /// activating the app, and it was that activation (on a regular
+    /// window) that used to slide the user off another app's full-screen
+    /// Space. `orderFrontRegardless` brings it forward even though the app
+    /// stays in the background; the cross-space collection flags + floating
+    /// level let it land on — and sit above — the current full-screen Space.
+    func showPanel() {
+        makePanelIfNeeded()
+        guard let panel else { return }
+        if panel.isMiniaturized { panel.deminiaturize(nil) }
+        elevateForFullscreenOverlay(panel)
+        panel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
+    }
+
+    /// Elevate to `.floating` so the panel overlays a full-screen app's
+    /// window — the cross-space flags let it *join* the Space, but only a
+    /// raised level puts it *above* the full-screen window. On the next
+    /// `didResignKey` (user clicked back to the other app or another
+    /// window) drop to `.normal` unless Always-on-Top is on, so the panel
+    /// recedes instead of floating over everything forever. Re-armed on
+    /// each summon.
     private func elevateForFullscreenOverlay(_ window: NSWindow) {
         window.level = .floating
-
-        // Replace any prior observer — multiple summons in quick
-        // succession could otherwise stack observers.
         if let prev = resignKeyObserver {
             NotificationCenter.default.removeObserver(prev)
             resignKeyObserver = nil
         }
-
         resignKeyObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification,
             object: window,
             queue: .main
         ) { [weak self, weak window] _ in
-            // Re-check Always-on-Top each fire — the user may have
-            // toggled it on since the observer was installed, in
-            // which case the WindowLevelApplier policy wins.
+            // Re-read the setting each fire — the user may have toggled it
+            // since this observer was armed.
             let alwaysOnTop = UserDefaults.standard.bool(forKey: "vektor.alwaysOnTop")
             if !alwaysOnTop { window?.level = .normal }
             if let observer = self?.resignKeyObserver {
@@ -138,121 +215,46 @@ final class MenuBarController: NSObject {
         }
     }
 
-    private func mainWindow() -> NSWindow? {
-        // ContentView sets navigationTitle("") so window.title is empty —
-        // we identify the WindowGroup("Vektor", id: "main") window by its
-        // SwiftUI-assigned identifier instead, falling back to a class /
-        // canBecomeMain filter (excluding Settings, status item, etc.).
-        if let win = NSApp.windows.first(where: { window in
-            (window.identifier?.rawValue ?? "").contains("main")
-                && window.canBecomeMain
-        }) {
-            return win
-        }
-        return NSApp.windows.first { window in
-            let className = String(describing: type(of: window))
-            return !className.contains("MenuBarExtra")
-                && !className.contains("StatusItem")
-                && !className.contains("NSStatusBarWindow")
-                && !className.contains("PopupBackdrop")
-                && !className.contains("Settings")
-                && !className.contains("Preferences")
-                && window.canBecomeMain
-        }
-    }
-
-    /// `isVisible` is true for miniaturized and occluded windows, and
-    /// `NSApp.isActive` is unreliable in accessory mode — combine the
-    /// signals that actually correspond to "user can see pixels."
+    /// `isVisible` is true for miniaturized and occluded windows, so
+    /// combine the signals that actually correspond to "user can see it."
     private func mainWindowIsShowing() -> Bool {
-        guard let win = mainWindow(), win.isVisible, !win.isMiniaturized else {
+        guard let panel, panel.isVisible, !panel.isMiniaturized else {
             return false
         }
-        return win.occlusionState.contains(.visible)
+        return panel.occlusionState.contains(.visible)
     }
 
     private func toggleMainWindow() {
         if mainWindowIsShowing() {
-            // `orderOut` (not `NSApp.hide`) for both modes: hide preserves
-            // the window's home Space, so the next activate would yank the
-            // user back to that Space. `orderOut` cleanly detaches the
-            // window from any Space — the next `makeKeyAndOrderFront` lands
-            // it on whatever Space the user is on at that moment.
-            mainWindow()?.orderOut(nil)
-            return
-        }
-
-        // Window flags guarantee it can appear on any Space (incl. fullscreen).
-        // Order matters: bring the window forward *first* so it materialises
-        // on the current Space — then activate the app. Doing activate first
-        // makes macOS jump to wherever the app's key window currently lives,
-        // which is exactly the "Space slide" the user wanted to avoid.
-        if let win = mainWindow() {
-            Self.prepareForCrossSpaceSummon(win)
-            elevateForFullscreenOverlay(win)
-            if win.isMiniaturized { win.deminiaturize(nil) }
-            win.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else if let open = openMainWindow {
-            // Closed via red X, or accessory-mode warm path.
-            open()
-            DispatchQueue.main.async { [weak self] in
-                if let w = self?.mainWindow() {
-                    Self.prepareForCrossSpaceSummon(w)
-                    self?.elevateForFullscreenOverlay(w)
-                    w.makeKeyAndOrderFront(nil)
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-            }
+            // `orderOut` hides the panel from every Space; the next
+            // `showPanel` re-summons it onto whatever Space the user is on.
+            panel?.orderOut(nil)
         } else {
-            // Cold accessory-mode path: bridge hasn't installed yet because
-            // the WindowGroup has never been materialized. SwiftUI exposes
-            // File → New Window via `newWindowForTab:`, which creates a
-            // fresh WindowGroup window even with no Dock icon.
-            NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
-            DispatchQueue.main.async { [weak self] in
-                if let w = self?.mainWindow() {
-                    Self.prepareForCrossSpaceSummon(w)
-                    self?.elevateForFullscreenOverlay(w)
-                    w.makeKeyAndOrderFront(nil)
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-            }
+            showPanel()
         }
+    }
+
+    /// Hide the panel — wired to the yellow minimize button (see
+    /// `makePanelIfNeeded`), since a floating panel can't miniaturize to a
+    /// Dock that, in Menu-Bar-Only mode, isn't there.
+    @objc private func hidePanel() {
+        panel?.orderOut(nil)
     }
 
     // MARK: - Menu actions
 
     @objc private func menuOpen() {
-        if let win = mainWindow() {
-            Self.prepareForCrossSpaceSummon(win)
-            elevateForFullscreenOverlay(win)
-            if win.isMiniaturized { win.deminiaturize(nil) }
-            win.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else if let open = openMainWindow {
-            open()
-            DispatchQueue.main.async { [weak self] in
-                if let w = self?.mainWindow() {
-                    Self.prepareForCrossSpaceSummon(w)
-                    self?.elevateForFullscreenOverlay(w)
-                    w.makeKeyAndOrderFront(nil)
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-            }
-        } else {
-            NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
-        }
+        showPanel()
     }
 
     @objc private func menuPreferences() {
         NSApp.activate(ignoringOtherApps: true)
-        // Prefer the SwiftUI-native action that WindowOpenerBridge wired
-        // up. It Just Works across macOS releases. Fall back to the
-        // historical selectors only if the SwiftUI bridge hasn't been
-        // installed yet (early-launch race) — and in that case retry
-        // after the next runloop spin so the openSettings callback has
-        // a chance to register.
+        // Prefer the SwiftUI-native action that the panel's SettingsBridge
+        // wired up. It Just Works across macOS releases. Fall back to the
+        // historical selectors only if the bridge hasn't installed yet
+        // (Preferences clicked before the panel ever appeared) — and in
+        // that case retry after the next runloop spin so the openSettings
+        // callback has a chance to register.
         if let openSettings = openSettingsAction {
             openSettings()
             return
@@ -363,5 +365,39 @@ final class MenuBarController: NSObject {
         }
         image.isTemplate = true
         return image
+    }
+}
+
+/// Non-activating panel that can still become the key window, so the
+/// calculator receives keystrokes the instant it's summoned — even while
+/// another app owns the active / full-screen Space. A borderless or
+/// non-activating panel returns `false` from `canBecomeKey` by default,
+/// which would leave the editor unable to take focus; override it.
+final class QuickPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
+/// Root of the panel's SwiftUI tree: the calculator, the shared model, and
+/// a tiny bridge that hands SwiftUI's native `openSettings` action to
+/// MenuBarController (more reliable than the `showSettingsWindow:` selector
+/// in accessory mode). `.frame(minWidth:minHeight:)` mirrors what the old
+/// WindowGroup wrapper applied.
+private struct PanelRootView: View {
+    var body: some View {
+        ContentView()
+            .environmentObject(AppModel.shared)
+            .frame(minWidth: 760, minHeight: 520)
+            .background(SettingsBridge())
+    }
+}
+
+private struct SettingsBridge: View {
+    @Environment(\.openSettings) private var openSettings
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                MenuBarController.shared.openSettingsAction = { openSettings() }
+            }
     }
 }

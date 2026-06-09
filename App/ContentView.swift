@@ -88,6 +88,12 @@ enum Pane: String, CaseIterable, Identifiable {
 
 @MainActor
 final class AppModel: ObservableObject {
+    /// The single app-wide model instance. The menu-bar panel and the
+    /// SwiftUI `Settings` scene both share this so the engine, FX / crypto
+    /// streams, and live-data state exist exactly once. `#Preview` and
+    /// tests still construct their own throwaway `AppModel()`.
+    static let shared = AppModel()
+
     @Published var engine: NumiEngine?
     @Published var engineError: String?
     @Published var fxSnapshotDate: Date?
