@@ -198,6 +198,40 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertNotNil(results.first?.value)
     }
 
+    /// Regression: `1800 THB in EUR` must be a currency conversion, not a
+    /// timezone conversion. `1800` is a valid HHmm military time, so the
+    /// conversion-form parser used to grab the line and try to resolve THB/EUR
+    /// as timezones — emitting "Resolving THB, EUR…" forever. Currency codes
+    /// are registered into math.js dynamically (after FX rates land), so they
+    /// can't be vetoed via the init-time unit snapshot; the parser matches the
+    /// currency allow-list directly instead.
+    func testCurrencyAmountLikeMilitaryTimeIsNotTimezone() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("1800 THB in EUR").first
+        XCTAssertNotEqual(r?.kind, .timezone,
+                          "currency conversion misrouted to timezone: \(String(describing: r))")
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertEqual(r?.value?.contains("Resolving"), false,
+                       "stuck on timezone resolution: \(String(describing: r?.value))")
+        // No FX key in tests → 1:1 placeholders, so 1800 THB ⇒ 1800 EUR.
+        XCTAssertEqual(r?.value?.contains("EUR"), true)
+    }
+
+    /// With live rates applied, the same line converts using the fresh rate
+    /// rather than the 1:1 placeholder. USD:1, EUR:0.9, THB:36 ⇒
+    /// 1800 THB = 50 USD = 45 EUR.
+    func testCurrencyAmountLikeMilitaryTimeUsesFXRate() throws {
+        let engine = try NumiEngine()
+        engine.applyFX(.init(base: "USD",
+                             ratesPerUSD: ["USD": 1.0, "EUR": 0.9, "THB": 36.0],
+                             timestamp: Date()))
+        let r = engine.evaluate("1800 THB in EUR").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertEqual(r?.value?.contains("45"), true,
+                       "expected 45 EUR from fresh rate, got: \(String(describing: r?.value))")
+        XCTAssertEqual(r?.value?.contains("EUR"), true)
+    }
+
     func testEuropeanDotAMPMConversion() throws {
         // `4.30pm` (dot separator, glued pm) should be normalised to
         // `4:30 pm` before the conversion-form regex runs.

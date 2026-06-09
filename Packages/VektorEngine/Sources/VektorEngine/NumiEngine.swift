@@ -575,11 +575,17 @@ public final class NumiEngine {
         let pieces = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard let firstWord = pieces.first else { return nil }
         // Quick veto: if either side of "in" is a registered math.js unit
-        // (e.g. "1000 mm in m" or "60 rpm in Hz"), this is a unit conversion
-        // disguised as 4-digit-military-time. Let math.js handle it.
+        // (e.g. "1000 mm in m" or "60 rpm in Hz") or a known currency code
+        // (e.g. "1800 THB in EUR" — where 1800 reads as a valid HHmm time),
+        // this is a unit/currency conversion disguised as 4-digit-military-time.
+        // Currencies are registered into math.js dynamically once FX rates land,
+        // so they're absent from the init-time `knownUnitNames` snapshot that
+        // `isKnownUnit` checks — match the currency allow-list directly here.
         if let lastBeforeIn = pieces.firstIndex(of: "in").map({ pieces[$0 - 1] }),
            let firstAfterIn = pieces.firstIndex(of: "in").map({ pieces[$0 + 1] }) {
-            if isKnownUnit(lastBeforeIn) || isKnownUnit(firstAfterIn) {
+            if isKnownUnit(lastBeforeIn) || isKnownUnit(firstAfterIn)
+                || NumiPreprocessor.currencyCodes.contains(lastBeforeIn.uppercased())
+                || NumiPreprocessor.currencyCodes.contains(firstAfterIn.uppercased()) {
                 return nil
             }
         }
