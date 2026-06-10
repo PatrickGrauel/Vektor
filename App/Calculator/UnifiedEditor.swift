@@ -412,11 +412,29 @@ final class ColumnContainer: NSView {
     private let minGutterWidth: CGFloat = 160
     private let dividerHitWidth: CGFloat = 11   // wider hit area for easier drag
 
+    /// Re-entrancy guard: `relayoutAndResize` sets `frame`, which can schedule
+    /// another `layout()` pass — without this the two would recurse.
+    private var isRelayingOut = false
+    /// Container width at the last *full* relayout. Starts at -1 so the first
+    /// real layout — and any width change, including a tab re-appear that
+    /// first lays out at zero width — re-runs the full pass, recomputing the
+    /// gutter's paragraph-spacing extras AND line y-positions *together*.
+    /// Without this, a relayout that ran at zero width left the spacing
+    /// unapplied and the gutter drew multi-line results on top of each other.
+    private var lastFullLayoutWidth: CGFloat = -1
+
     override var isFlipped: Bool { true }
 
     override func layout() {
         super.layout()
         relayoutChildren()
+        // A plain layout pass only repositions the columns. When the width
+        // settles (notably 0 → real on a tab re-appear, or a window resize),
+        // the gutter's extras + y-positions are stale — run the full pass.
+        if !isRelayingOut, bounds.width >= 1,
+           abs(bounds.width - lastFullLayoutWidth) > 0.5 {
+            relayoutAndResize()
+        }
     }
 
     /// Bottom padding so the user can scroll the cursor away from
@@ -441,7 +459,10 @@ final class ColumnContainer: NSView {
     ///      height or the gutter's max-row-bottom — plus scroll-past-
     ///      end padding so the cursor never sits at the window edge.
     func relayoutAndResize() {
-        guard let editor, let gutter else { return }
+        guard !isRelayingOut, let editor, let gutter else { return }
+        isRelayingOut = true
+        defer { isRelayingOut = false }
+        lastFullLayoutWidth = bounds.width
         // Step 0: lay out so the gutter knows its width (needed for
         // bounding-rect calculations).
         relayoutChildren()
