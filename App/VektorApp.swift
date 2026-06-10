@@ -38,6 +38,7 @@ struct VektorApp: App {
         Settings {
             SettingsView()
                 .environmentObject(AppModel.shared)
+                .environmentObject(EntitlementManager.shared)
         }
     }
 }
@@ -48,6 +49,9 @@ struct VektorApp: App {
 /// not Menu-Bar-Only mode).
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Load the unlock product, restore prior purchases, and start the
+        // trial clock before the panel appears so gating is correct frame-one.
+        EntitlementManager.shared.start()
         MenuBarController.shared.install()
         MenuBarController.shared.applyActivationPolicy()
         // Show the panel at launch, matching the old WindowGroup which

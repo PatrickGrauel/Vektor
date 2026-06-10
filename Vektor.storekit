@@ -1,0 +1,32 @@
+{
+  "identifier" : "5C7E2A10-1F2B-4C3D-9E4F-VEKTORUNLOCK1",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "A1B2C3D4-0001-4000-8000-VEKTORUNLOCK",
+      "localizations" : [
+        {
+          "description" : "Unlock the full Vektor Calculator forever with a one-time purchase.",
+          "displayName" : "Vektor Lifetime Unlock",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.vektor.Vektor.unlock",
+      "referenceName" : "Vektor Lifetime Unlock",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6778571085",
+    "_developerTeamID" : "334ZBC7GBZ",
+    "_failTransactionsEnabled" : false,
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

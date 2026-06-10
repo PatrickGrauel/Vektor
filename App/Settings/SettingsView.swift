@@ -3,6 +3,7 @@ import AppKit
 
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var ent: EntitlementManager
 
     // General
     @AppStorage("vektor.precision")  private var precision: Int = 2
@@ -68,6 +69,27 @@ struct SettingsView: View {
                         MenuBarController.shared.relaunch()
                     }
                     .help("Quit and reopen Vektor. The cleanest way to apply Menu Bar Only Mode if the Dock icon doesn't disappear.")
+                }
+            }
+
+            // MARK: License
+            Section("Vektor Calculator") {
+                LabeledContent("Status") {
+                    Text(ent.statusText)
+                        .foregroundStyle(ent.isPurchased ? Color.green : .secondary)
+                }
+                if !ent.isPurchased {
+                    Button {
+                        Task { await ent.purchase() }
+                    } label: {
+                        Text(ent.product.map { "Unlock — \($0.displayPrice)" } ?? "Unlock")
+                    }
+                    .disabled(ent.purchaseInFlight || ent.product == nil)
+                }
+                Button("Restore Purchase") { Task { await ent.restore() } }
+                    .disabled(ent.purchaseInFlight)
+                if let err = ent.lastErrorMessage {
+                    Text(err).font(.caption).foregroundStyle(.red)
                 }
             }
 

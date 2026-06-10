@@ -383,11 +383,23 @@ final class QuickPanel: NSPanel {
 /// in accessory mode). `.frame(minWidth:minHeight:)` mirrors what the old
 /// WindowGroup wrapper applied.
 private struct PanelRootView: View {
+    @StateObject private var ent = EntitlementManager.shared
+
     var body: some View {
         ContentView()
             .environmentObject(AppModel.shared)
+            .environmentObject(ent)
             .frame(minWidth: 760, minHeight: 520)
             .background(SettingsBridge())
+            // No trial chrome on the calculator surface — during the trial the
+            // app looks completely normal. "Unlock" lives in Settings; the
+            // paywall appears only once the 7 days have actually run out.
+            .overlay {
+                if !ent.isUnlocked {
+                    PaywallView()
+                        .environmentObject(ent)
+                }
+            }
     }
 }
 
