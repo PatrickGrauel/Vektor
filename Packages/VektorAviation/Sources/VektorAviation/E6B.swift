@@ -56,17 +56,21 @@ public enum E6B {
 
     // MARK: - Airspeed conversions
 
-    /// CAS → TAS (rule-of-thumb, ~2% per 1000 ft of pressure altitude, temp-corrected).
-    /// For training/general aviation precision. Use `tasFromCAS_exact` for compressibility-accurate.
+    /// CAS → TAS via the density-ratio approximation (ignores
+    /// compressibility — fine below ~200 kt / FL250, i.e. all GA use).
     public static func tasFromCAS(cas: Double,
                                   pressureAltitudeFt: Double,
                                   oatC: Double) -> Double {
-        // Density-ratio approximation: TAS = CAS * sqrt(rho0/rho)
-        // rho ratio approx from temperature & pressure altitude.
+        // TAS = CAS / sqrt(sigma), sigma = rho/rho0 = delta * (T0 / T)
+        // where delta is the ISA pressure ratio at the pressure altitude,
+        // T is the ACTUAL outside air temp, and T0 = 288.15 K is the
+        // SEA-LEVEL standard temp. (Using T_ISA(alt) here instead of T0
+        // was a bug: it reduced sigma to the pressure ratio at ISA and
+        // overstated TAS by ~3.7% at 10,000 ft.)
+        let t0K = 288.15
         let tK = oatC + 273.15
-        let isaTK = Atmosphere.isaTempC(altitudeFt: pressureAltitudeFt) + 273.15
         let pressureRatio = pow(1 - 6.8755856e-6 * pressureAltitudeFt, 5.2558797)
-        let densityRatio = pressureRatio * (isaTK / tK)
+        let densityRatio = pressureRatio * (t0K / tK)
         return cas / sqrt(densityRatio)
     }
 

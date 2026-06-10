@@ -144,7 +144,7 @@ public enum SuggestionEngine {
 
 /// Physical-dimension grouping. Conversions only make sense between units in
 /// the same group.
-public enum UnitCategory: Sendable {
+public enum UnitCategory: Sendable, CaseIterable {
     case length, mass, time, temperature, pressure, speed,
          force, energy, power, frequency, data, angle, volume, area
 
@@ -169,10 +169,10 @@ public enum UnitCategory: Sendable {
                 "micron",
                 // Imperial / nautical
                 "inches", "feet", "yards", "miles",
-                "nautical_mile", "NM", "nmi",
+                "nauticalmile", "NM", "nmi",
                 // Esoteric but documented
                 "fathom", "furlong", "league",
-                "light_year", "AU", "parsec",
+                "lightyear", "AU", "parsec",
             ]
         case .mass:
             return [
@@ -188,13 +188,13 @@ public enum UnitCategory: Sendable {
                 "hectoliters",
                 "gallons", "pints", "quarts", "cups",
                 "tablespoons", "teaspoons",
-                "imperial_gallon", "imperial_pint",
-                "cubic_meters", "cubic_feet", "cubic_inches",
+                "imperialgallon", "imperialpint",
+                "cubicmeters", "cubicfeet", "cubicinches",
             ]
         case .area:
             return [
-                "square_meters", "square_kilometers", "square_centimeters",
-                "square_feet", "square_yards", "square_miles", "square_inches",
+                "squaremeters", "squarekilometers", "squarecentimeters",
+                "squarefeet", "squareyards", "squaremiles", "squareinches",
                 "hectares", "acres",
             ]
         case .time:
@@ -216,26 +216,29 @@ public enum UnitCategory: Sendable {
             return [
                 "mph", "knots", "km/h", "m/s",
                 "kt", "kts", "kn", "kmh", "kph",
-                "ft/s", "ft/min",
+                // NOTE: "ft/min" is NOT a valid completion — math.js parses
+                // `min` as the min() function, not minutes. `fpm` is the
+                // registered unit.
+                "ft/s", "fpm",
             ]
         case .force:
             return [
                 "newtons", "kilonewtons", "millinewtons", "meganewtons",
-                "dynes", "pound_force", "lbf", "kp", "kgf",
+                "dynes", "poundforce", "lbf", "kp", "kgf",
             ]
         case .energy:
             return [
                 "joules", "kilojoules", "megajoules", "gigajoules",
                 "millijoules",
                 "calories", "kilocalories",
-                "watt_hours", "kilowatt_hours", "megawatt_hours",
+                "watthours", "kilowatthours", "megawatthours",
                 "BTU", "electronvolt",
             ]
         case .power:
             return [
                 "watts", "kilowatts", "megawatts", "gigawatts",
                 "milliwatts",
-                "horsepower", "metric_horsepower",
+                "horsepower", "metrichorsepower",
             ]
         case .frequency:
             return [
@@ -290,9 +293,9 @@ public enum UnitCategory: Sendable {
             "metre", "metres",
             "inch", "inches", "ft", "foot", "feet", "yd", "yard", "yards",
             "mi", "mile", "miles",
-            "NM", "nmi", "nautical_mile", "nautical_miles",
+            "NM", "nmi", "nauticalmile", "nauticalmiles",
             "fathom", "fathoms", "furlong", "furlongs", "league", "leagues",
-            "ly", "light_year", "light_years",
+            "ly", "lightyear", "lightyears",
             "AU", "parsec", "parsecs",
             "micron", "microns",
             "angstrom", "angstroms",
@@ -317,10 +320,10 @@ public enum UnitCategory: Sendable {
             "quart", "quarts", "cup", "cups",
             "tablespoon", "tablespoons", "tbsp",
             "teaspoon", "teaspoons", "tsp",
-            "imperial_gallon", "imperial_pint",
-            "cuin", "cubic_inch", "cubic_inches",
-            "cubic_foot", "cubic_feet",
-            "cubic_meter", "cubic_meters",
+            "imperialgallon", "imperialpint",
+            "cuin", "cubicinch", "cubicinches",
+            "cubicfoot", "cubicfeet",
+            "cubicmeter", "cubicmeters",
         ])
 
         // ── Time ────────────────────────────────────────────────────────
@@ -357,7 +360,7 @@ public enum UnitCategory: Sendable {
         // ── Force ──────────────────────────────────────────────────────
         addSI(.force, "N", "newton", [
             "dyne", "dynes",
-            "lbf", "kp", "kgf", "pound_force",
+            "lbf", "kp", "kgf", "poundforce",
             "kip",
         ])
 
@@ -365,17 +368,17 @@ public enum UnitCategory: Sendable {
         addSI(.energy, "J", "joule", [
             "calorie", "calories", "cal", "kcal",
             "kilocalorie", "kilocalories",
-            "wh", "watt_hour", "watt_hours",
-            "kwh", "kilowatt_hour", "kilowatt_hours",
-            "mwh", "megawatt_hour",
+            "wh", "watthour", "watthours",
+            "kwh", "kilowatthour", "kilowatthours",
+            "mwh", "megawatthour",
             "btu", "electronvolt", "ev",
-            "ftlb", "foot_pound",
+            "ftlb", "footpound",
         ])
 
         // ── Power ──────────────────────────────────────────────────────
         addSI(.power, "W", "watt", [
             "hp", "horsepower",
-            "ps", "metric_horsepower",
+            "ps", "metrichorsepower",
             "kva",
         ])
 
@@ -413,10 +416,10 @@ public enum UnitCategory: Sendable {
         add(.area, [
             "hectare", "hectares", "acre", "acres",
             "m^2", "km^2", "cm^2", "ft^2", "yd^2", "in^2", "mi^2",
-            "square_meter", "square_meters",
-            "square_foot", "square_feet",
-            "square_yard", "square_yards",
-            "square_kilometer", "square_kilometers",
+            "squaremeter", "squaremeters",
+            "squarefoot", "squarefeet",
+            "squareyard", "squareyards",
+            "squarekilometer", "squarekilometers",
         ])
 
         return m

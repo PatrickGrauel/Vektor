@@ -469,9 +469,16 @@ struct WorkingHoursEditor: View {
                 Spacer()
                 Button("Cancel") { onClose() }
                 Button("Save") {
-                    city.workStartHour = startHour
-                    city.workEndHour = max(endHour, startHour + 1)
-                    city.workDays = Array(workDays).sorted()
+                    // Compose ONE updated value and write it through the
+                    // binding ONCE. Three sequential writes would each go
+                    // get → mutate → set, and the sheet's binding getter
+                    // returns the immutable `sheet(item:)` capture — so
+                    // writes 1 and 2 were silently lost (hours never saved).
+                    var updated = city
+                    updated.workStartHour = startHour
+                    updated.workEndHour = max(endHour, startHour + 1)
+                    updated.workDays = Array(workDays).sorted()
+                    city = updated
                     onClose()
                 }
                 .keyboardShortcut(.defaultAction)

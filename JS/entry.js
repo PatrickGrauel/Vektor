@@ -216,9 +216,14 @@ globalThis.vektor = {
       try { math.createUnit(name, def, { override: true }); } catch (e) {}
     };
     // ── Aviation ────────────────────────────────────────────────
+    // IMPORTANT: math.js's createUnit silently rejects names containing
+    // underscores — `nautical_mile` etc. never registered and every use
+    // threw "Undefined symbol". All multi-word names below are single
+    // identifiers (lettersonly / camelfree) for that reason.
     add("NM",   "1852 m");
     add("nmi",  "1 NM");
-    add("nautical_mile", "1 NM");
+    add("nauticalmile",  "1 NM");
+    add("nauticalmiles", "1 NM");
     add("kt",   "1 NM / hour");
     add("kts",  "1 kt");
     add("kn",   "1 kt");
@@ -249,9 +254,11 @@ globalThis.vektor = {
     add("league",    "4828.032 m");
 
     // ── Mass / Weight ───────────────────────────────────────────
-    add("metric_ton", "1000 kg");
+    add("metricton",  "1000 kg");
+    add("metrictons", "1000 kg");
     add("ct",        "200 mg");                  // carat
-    add("slug_mass", "14.5939 kg");
+    add("slug",      "14.5939 kg");
+    add("slugs",     "1 slug");
 
     // ── Volume ──────────────────────────────────────────────────
     // math.js's createUnit silently rejects names with underscores, so
@@ -260,6 +267,16 @@ globalThis.vektor = {
     add("dl",        "100 milliliter");
     add("igallon",   "4.54609 liter");           // imperial gallon
     add("ipint",     "0.568261 liter");          // imperial pint
+    add("imperialgallon",  "1 igallon");
+    add("imperialgallons", "1 igallon");
+    add("imperialpint",    "1 ipint");
+    add("imperialpints",   "1 ipint");
+    add("cubicmeter",  "1 m^3");
+    add("cubicmeters", "1 m^3");
+    add("cubicfoot",   "1 ft^3");
+    add("cubicfeet",   "1 ft^3");
+    add("cubicinch",   "1 inch^3");
+    add("cubicinches", "1 inch^3");
     add("tbsp",      "1 tablespoon");
     add("tsp",       "1 teaspoon");
 
@@ -268,22 +285,32 @@ globalThis.vektor = {
     // — keep them as single-word identifiers; math.js's createUnit silently
     // rejects names with underscores so `cal_unit` would never resolve.
     add("ps",        "735.49875 W");             // metric horsepower
+    add("metrichorsepower", "1 ps");
     add("cal",       "4.184 J");                 // gram calorie
     add("Cal",       "4184 J");                  // kcal / food calorie
     add("MWh",       "3.6e9 J");
     add("GWh",       "3.6e12 J");
+    add("watthour",       "3600 J");
+    add("watthours",      "3600 J");
+    add("kilowatthour",   "3.6e6 J");
+    add("kilowatthours",  "3.6e6 J");
+    add("megawatthour",   "1 MWh");
+    add("megawatthours",  "1 MWh");
+    add("ftlb",           "1.3558179483 J");     // foot-pound (energy)
+    add("footpound",      "1 ftlb");
+    add("footpounds",     "1 ftlb");
 
     // ── Force ───────────────────────────────────────────────────
     add("kp",        "9.80665 N");               // kilopond
     add("kgf",       "1 kp");
-    add("lbf_alias", "4.4482216 N");
+    add("poundforce", "4.4482216 N");            // = lbf (math.js built-in)
 
     // ── Pressure aliases ────────────────────────────────────────
     add("psf",       "47.880259 Pa");            // pounds per sq foot
     add("kpsi",      "6894757.293 Pa");
 
     // ── Acceleration ────────────────────────────────────────────
-    add("g_force",   "9.80665 m / s^2");         // standard gravity
+    add("gforce",    "9.80665 m / s^2");         // standard gravity
 
     // ── Density / concentration ─────────────────────────────────
     add("ppm",       "1e-6");
@@ -292,10 +319,33 @@ globalThis.vektor = {
 
     // ── Cooking / counting ──────────────────────────────────────
     add("dozen",     "12");
-    add("gross_count", "144");
+    add("gross",     "144");
     add("score",     "20");
     add("ream",      "500");
-    add("baker_dozen", "13");
+    add("bakersdozen", "13");
+
+    // ── Area (word forms; symbol forms m^2 / ft^2 work natively) ──
+    add("sqm",   "1 m^2");
+    add("sqkm",  "1 km^2");
+    add("sqcm",  "1 cm^2");
+    add("sqft",  "1 ft^2");
+    add("sqyd",  "1 yd^2");
+    add("sqmi",  "1 mile^2");
+    add("sqin",  "1 inch^2");
+    add("squaremeter",      "1 m^2");
+    add("squaremeters",     "1 m^2");
+    add("squarekilometer",  "1 km^2");
+    add("squarekilometers", "1 km^2");
+    add("squarecentimeter", "1 cm^2");
+    add("squarecentimeters","1 cm^2");
+    add("squarefoot",  "1 ft^2");
+    add("squarefeet",  "1 ft^2");
+    add("squareyard",  "1 yd^2");
+    add("squareyards", "1 yd^2");
+    add("squaremile",  "1 mile^2");
+    add("squaremiles", "1 mile^2");
+    add("squareinch",  "1 inch^2");
+    add("squareinches","1 inch^2");
 
     // ── Data sizes (math.js uses kB/MB/etc.; KB is the conventional spelling) ──
     add("KB",        "1 kB");                    // KB ↔ kB (1000 bytes)
@@ -329,20 +379,19 @@ globalThis.vektor = {
       // the safest place to guarantee they exist as Unit definitions for
       // mathjs.evaluate to recognise inside function arguments like
       // `humanTime(3725 seconds, 'seconds')`.
-      seconds: "s", second_unit: "s",
+      seconds: "s",
       minutes: "minute", hours: "hour", days: "day",
       // Temperature — math.js uses degC / degF / K; offer natural names.
       celsius:    "degC",
       fahrenheit: "degF",
       kelvin:     "K",
-      // Force
+      // Force (poundforce / metrichorsepower etc. registered above —
+      // underscore keys here would silently never register)
       newtons: "N", dynes: "dyne",
-      pound_force: "lbf",
       // Energy / Power
       joules: "J", kilojoules: "kJ",
-      calories: "cal_unit", kilocalories: "Cal",
-      watt_hours: "Wh", kilowatt_hours: "kWh",
-      watts: "W", kilowatts: "kW", horsepower: "hp", metric_horsepower: "ps",
+      calories: "cal", kilocalories: "Cal",
+      watts: "W", kilowatts: "kW", horsepower: "hp",
       // Frequency
       hertz: "Hz", kilohertz: "kHz", megahertz: "MHz", gigahertz: "GHz",
       // Data
@@ -354,15 +403,40 @@ globalThis.vektor = {
       degrees: "deg", radians: "rad", arcminutes: "arcmin", arcseconds: "arcsec",
       // Speed
       knots: "kt",
-      // Area
-      square_meters: "m^2", square_feet: "ft^2", square_yards: "yd^2",
+      // Area (square* word forms registered above)
       hectares: "hectare", acres: "acre",
       // Length aliases
-      light_year: "9.4607304725808e15 m"
+      lightyear: "ly", lightyears: "ly"
     };
     Object.entries(plural).forEach(([word, def]) => {
       try { math.createUnit(word, `1 ${def}`, { override: true }); } catch (e) {}
     });
+
+    // SI-prefixed long-form plurals (decimeters, micrograms, megajoules,
+    // milliwatts, terahertz, petabytes, kilobits, …). math.js only knows
+    // the short symbols (dm, ug, MJ, mW, THz, PB, kb), but SuggestionEngine
+    // proposes the long plural forms — generate them all instead of
+    // hand-listing (hand-listing is how 36 of them ended up broken).
+    const siBases = [
+      ["m", "meter"], ["g", "gram"], ["L", "liter"], ["s", "second"],
+      ["N", "newton"], ["J", "joule"], ["W", "watt"], ["Hz", "hertz"],
+      ["B", "byte"], ["b", "bit"],
+    ];
+    const siPrefixes = [
+      ["Y","yotta"],["Z","zetta"],["E","exa"],["P","peta"],["T","tera"],
+      ["G","giga"],["M","mega"],["k","kilo"],["h","hecto"],["da","deca"],
+      ["d","deci"],["c","centi"],["m","milli"],["u","micro"],
+      ["n","nano"],["p","pico"],["f","femto"],["a","atto"],
+    ];
+    for (const [shortU, longU] of siBases) {
+      for (const [shortP, longP] of siPrefixes) {
+        // "hertz" is its own plural — "terahertzs" is not a word.
+        const name = longU === "hertz" ? `${longP}hertz` : `${longP}${longU}s`;
+        try {
+          math.createUnit(name, `1 ${shortP}${shortU}`, { override: true });
+        } catch (e) { /* prefix+unit combos math.js rejects are skipped */ }
+      }
+    }
   },
 
   /**

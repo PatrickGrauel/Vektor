@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import os
 
 /// Thin wrapper around `SecItem*` for storing string secrets in the
 /// macOS Keychain. Vektor uses this for the two API keys that previously
@@ -76,37 +77,58 @@ enum KeychainStorage {
         return s
     }
 
-    static func set(_ value: String, for key: String) {
+    /// Stores `value` (or deletes the item when `value` is empty).
+    /// Returns `true` only when the Keychain actually holds the intended
+    /// final state — callers that must not lose the secret (migration,
+    /// trial stamp) check this before discarding their source copy.
+    @discardableResult
+    static func set(_ value: String, for key: String) -> Bool {
         // Idempotent: delete any existing entry first.
         let q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
-        SecItemDelete(q as CFDictionary)
+        let deleteStatus = SecItemDelete(q as CFDictionary)
+        if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
+            logger.error("SecItemDelete(\(key, privacy: .public)) failed: \(deleteStatus)")
+        }
 
+        var succeeded = true
         if !value.isEmpty {
             var add = q
             add[kSecValueData as String] = Data(value.utf8)
-            // Accessible after first unlock — survives reboots without
-            // user re-entry but never leaves the device. Tighter than
-            // `kSecAttrAccessibleAlways` (which Apple deprecated).
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            SecItemAdd(add as CFDictionary, nil)
+            // NOTE: deliberately no `kSecAttrAccessible` here. That
+            // attribute is only valid for data-protection-keychain items;
+            // on the macOS file-based keychain it is ignored at best and
+            // on several OS versions makes `SecItemAdd` fail with
+            // `errSecParam`. Sandboxed file-keychain items are already
+            // device-bound and ACL'd to this app.
+            let addStatus = SecItemAdd(add as CFDictionary, nil)
+            if addStatus != errSecSuccess {
+                logger.error("SecItemAdd(\(key, privacy: .public)) failed: \(addStatus)")
+                succeeded = false
+            }
         }
 
         // Mirror presence into UserDefaults so other call sites can
         // ask "is the key set?" without triggering a Keychain read.
-        setPresenceFlag(key, value: !value.isEmpty)
+        // On a failed add the item is GONE (delete-then-add), so the
+        // flag must say false — a stale `true` would make readers
+        // believe a key exists that doesn't.
+        setPresenceFlag(key, value: !value.isEmpty && succeeded)
 
-        // Notify observers regardless of empty / non-empty — empty means
-        // "deleted" and views may want to react.
+        // Notify observers regardless of outcome — empty means "deleted",
+        // failure means "changed to absent"; views may want to react.
         NotificationCenter.default.post(
             name: changeNotification,
             object: nil,
             userInfo: [changeNotificationKeyInfoKey: key]
         )
+        return succeeded
     }
+
+    private static let logger = Logger(subsystem: "app.vektor.Vektor", category: "keychain")
 
     static func delete(_ key: String) {
         set("", for: key)
@@ -120,11 +142,21 @@ enum KeychainStorage {
     /// successful pass. Logs the migration so the user can audit in
     /// Console.app if needed.
     static func migrateFromUserDefaults(_ key: String) {
-        guard get(key) == nil,
-              let stored = UserDefaults.standard.string(forKey: key),
-              !stored.isEmpty
+        // Cheap short-circuit FIRST: if UserDefaults holds nothing there
+        // is nothing to migrate — and we avoid a `SecItemCopyMatching`
+        // (and its possible signature-change prompt) on every launch.
+        guard let stored = UserDefaults.standard.string(forKey: key),
+              !stored.isEmpty,
+              get(key) == nil
         else { return }
-        set(stored, for: key)
-        UserDefaults.standard.removeObject(forKey: key)
+        // Only destroy the UserDefaults copy once the Keychain write is
+        // CONFIRMED — otherwise a failed add would delete the user's
+        // only copy of the secret.
+        if set(stored, for: key) {
+            UserDefaults.standard.removeObject(forKey: key)
+            logger.notice("migrated \(key, privacy: .public) from UserDefaults to Keychain")
+        } else {
+            logger.error("migration of \(key, privacy: .public) failed — UserDefaults copy retained")
+        }
     }
 }

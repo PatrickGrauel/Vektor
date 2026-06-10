@@ -134,7 +134,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             defer: false
         )
         panel.contentViewController = hosting
-        panel.title = "Vektor"
+        // NO `panel.title` — the wordmark is drawn in-content (ContentView's
+        // pane-switcher label). `titleVisibility = .hidden` alone is not
+        // reliably honored for a .fullSizeContentView NSPanel: macOS can
+        // still paint the grey system title over the content, doubling the
+        // "Vektor" next to the traffic lights. An empty title removes the
+        // glyph at the source; .hidden stays as belt-and-suspenders.
+        panel.title = ""
+        // Keep the window identifiable for VoiceOver / accessibility even
+        // though no visual title is drawn.
+        panel.setAccessibilityLabel("Vektor")
         // Reproduce the old WindowGroup's `.hiddenTitleBar`: transparent
         // title bar, content drawn full height, traffic lights overlaying
         // the top-left (ContentView's chrome pads 78pt to clear them).

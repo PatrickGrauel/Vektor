@@ -289,7 +289,13 @@ struct TimezoneView: View {
                     showingAddSheetForCoord = coord
                 }
             )
-            .id(mapTickTrigger)   // forces redraw of terminator each minute
+            // NOTE: deliberately NO `.id(mapTickTrigger)` here. Changing
+            // `.id` does not "redraw" — it destroys and recreates the
+            // MKMapView, wiping the user's pan/zoom and reallocating the
+            // whole map once a minute. The `mapClock` tick toggles
+            // `mapTickTrigger`, which re-evaluates this body, recomputes
+            // `DayNightCurve.points()`, and lets `updateNSView` refresh
+            // the overlays in place.
 
             // Subtle overlay legend so users notice the curve.
             VStack {

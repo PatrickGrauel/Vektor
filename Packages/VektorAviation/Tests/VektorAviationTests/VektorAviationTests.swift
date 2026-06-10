@@ -34,6 +34,31 @@ final class VektorAviationTests: XCTestCase {
         XCTAssertEqual(da, 1800, accuracy: 1)
     }
 
+    // MARK: CAS → TAS
+    //
+    // Regression: the density ratio used T_ISA(alt)/T instead of T0/T,
+    // which collapsed sigma to the pressure ratio at ISA and overstated
+    // TAS by ~3.7% at 10,000 ft (156.8 kt instead of 151.2 kt).
+
+    func testTASFromCASAtSeaLevelISAEqualsCAS() {
+        // sigma = 1 at SL standard day → TAS == CAS.
+        XCTAssertEqual(E6B.tasFromCAS(cas: 100, pressureAltitudeFt: 0, oatC: 15),
+                       100, accuracy: 0.1)
+    }
+
+    func testTASFromCASAt10kISA() {
+        // 130 KCAS at PA 10,000 ft, ISA (-5°C): sigma = 0.7390 → TAS ≈ 151.2 kt.
+        XCTAssertEqual(E6B.tasFromCAS(cas: 130, pressureAltitudeFt: 10_000, oatC: -5),
+                       151.2, accuracy: 0.5)
+    }
+
+    func testTASFromCASHotDay() {
+        // Warmer than ISA → lower density → higher TAS than the ISA case.
+        let isa = E6B.tasFromCAS(cas: 130, pressureAltitudeFt: 10_000, oatC: -5)
+        let hot = E6B.tasFromCAS(cas: 130, pressureAltitudeFt: 10_000, oatC: 15)
+        XCTAssertGreaterThan(hot, isa)
+    }
+
     // MARK: E6B wind triangle
 
     func testDirectHeadwind() {

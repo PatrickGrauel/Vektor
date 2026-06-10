@@ -200,8 +200,12 @@ public final class NumiEngine {
 
             if let tzResult = handleTimezoneLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: tzResult, kind: .timezone))
-                previousValues.append(tzResult)
-                aggregateWindow.append(tzResult)
+                // Deliberately NOT appended to `previousValues` /
+                // `aggregateWindow`: tz results are display strings like
+                // "2026-06-10 14:23 CEST (Europe/Berlin)" (or a transient
+                // "Resolving …" placeholder). Substituting them into a later
+                // `prev` or `sum(...)` produces a math.js parse error — same
+                // exclusion the weather/stock handlers already get.
                 continue
             }
 

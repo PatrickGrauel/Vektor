@@ -9,13 +9,11 @@ import os
 ///
 /// **Why a self-managed trial.** The App Store only offers built-in free trials
 /// for auto-renewable subscriptions. For a one-time purchase we track the trial
-/// ourselves: the start date lives in `UserDefaults` (read on every launch — no
-/// Keychain prompt) and is mirrored into the Keychain, which survives an app
-/// delete/reinstall, so the trial can't be reset by reinstalling. The Keychain
-/// is read **only** when `UserDefaults` has lost the value (fresh install /
-/// cleared defaults); checking the presence flag first keeps the macOS "wants to
-/// use confidential information" prompt off the normal launch path (see
-/// `KeychainStorage`).
+/// ourselves: the start date lives in `UserDefaults` AND the Keychain, and the
+/// two are cross-checked on every launch with the EARLIEST plausible stamp
+/// winning. The Keychain copy survives app delete/reinstall and `defaults
+/// delete`, so neither reinstalling nor clearing/editing UserDefaults resets
+/// or extends the trial (see `loadOrStartTrial`).
 @MainActor
 final class EntitlementManager: ObservableObject {
     static let shared = EntitlementManager()
@@ -166,21 +164,43 @@ final class EntitlementManager: ObservableObject {
 
     private static func loadOrStartTrial() -> Date {
         let defaults = UserDefaults.standard
-        let stored = defaults.double(forKey: trialDefaultsKey)
-        if stored > 0 { return Date(timeIntervalSince1970: stored) }
+        let now = Date().timeIntervalSince1970
+        let storedDefaults = defaults.double(forKey: trialDefaultsKey)
 
-        // UserDefaults lost it (fresh install / cleared). Recover from the
-        // Keychain if present — checking the presence flag first avoids a
-        // Keychain *read* (and its signature-change prompt) on first run.
-        if KeychainStorage.hasKey(trialKeychainKey),
-           let s = KeychainStorage.get(trialKeychainKey),
-           let epoch = Double(s), epoch > 0 {
-            defaults.set(epoch, forKey: trialDefaultsKey)
+        // Read the Keychain copy whenever there is any sign one exists.
+        // Two deliberate departures from the old logic:
+        //   1. When UserDefaults is EMPTY we read the Keychain
+        //      unconditionally — the presence flag lives in UserDefaults
+        //      too, so `defaults delete` wipes both, and trusting the
+        //      flag here was exactly the one-command trial reset.
+        //   2. When UserDefaults HAS a value we still cross-check the
+        //      Keychain (flag permitting) so a hand-edited future epoch
+        //      can't extend the trial.
+        // Cost: one Keychain read per launch once a trial stamp exists.
+        // In production-signed builds this is silent; in dev ad-hoc
+        // builds it may prompt after a signature change — acceptable,
+        // it's the trial stamp, not a first-run UX path.
+        var keychainEpoch: Double = 0
+        if storedDefaults <= 0 || KeychainStorage.hasKey(trialKeychainKey) {
+            if let s = KeychainStorage.get(trialKeychainKey),
+               let e = Double(s), e > 0 {
+                keychainEpoch = e
+            }
+        }
+
+        // Earliest plausible stamp wins. Future-dated values are
+        // tampered/corrupt — a legitimate stamp is never in the future.
+        let candidates = [storedDefaults, keychainEpoch].filter { $0 > 0 && $0 <= now }
+        if let epoch = candidates.min() {
+            // Heal whichever store disagrees. The Keychain is only ever
+            // overwritten with an EQUAL-OR-EARLIER epoch — never reset
+            // forward to "now" while a stamp exists.
+            if storedDefaults != epoch { defaults.set(epoch, forKey: trialDefaultsKey) }
+            if keychainEpoch != epoch { KeychainStorage.set(String(epoch), for: trialKeychainKey) }
             return Date(timeIntervalSince1970: epoch)
         }
 
         // Genuine first launch — stamp "now" into both stores.
-        let now = Date().timeIntervalSince1970
         defaults.set(now, forKey: trialDefaultsKey)
         KeychainStorage.set(String(now), for: trialKeychainKey)
         return Date(timeIntervalSince1970: now)
