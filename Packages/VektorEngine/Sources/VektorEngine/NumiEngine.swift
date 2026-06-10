@@ -205,6 +205,12 @@ public final class NumiEngine {
                 continue
             }
 
+            if let wx = handleWeatherLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: wx.value, kind: .expression,
+                                     annotation: wx.annotation))
+                continue
+            }
+
             if let wx = handleMetarLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: wx.value, kind: .expression,
                                      annotation: wx.annotation))
@@ -784,6 +790,106 @@ public final class NumiEngine {
             label = "\(icaos.count) stations · oldest \(Self.formatAge(ages.max() ?? 0))"
         }
         return MetarLine(value: value, annotation: LineResult.Annotation(label: label, tone: worstTone))
+    }
+
+    // MARK: - Weather (non-pilot METAR/TAF digest)
+
+    /// `weather <city|IATA|ICAO>` — plain-language current conditions + a
+    /// short outlook for non-pilots, built from the same METAR/TAF the
+    /// aviation pane uses (no third-party weather API, nothing that bills or
+    /// breaks). The place resolves to the nearest reporting airport; "now"
+    /// comes from the METAR and the outlook from the TAF, flattened to
+    /// local-time plain language by `WeatherDigest`.
+    private func handleWeatherLine(_ line: String) -> MetarLine? {
+        guard line.range(of: #"^(weather|wx)\s+\S"#,
+                         options: [.regularExpression, .caseInsensitive]) != nil else {
+            return nil
+        }
+        let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).map(String.init)
+        guard parts.count == 2 else { return nil }
+        var query = parts[1].trimmingCharacters(in: .whitespaces)
+        // Allow natural phrasing: "weather in Tokyo", "weather for Paris".
+        if let r = query.range(of: #"^(in|for|at)\s+"#, options: [.regularExpression, .caseInsensitive]) {
+            query.removeSubrange(r)
+            query = query.trimmingCharacters(in: .whitespaces)
+        }
+        guard !query.isEmpty else { return nil }
+
+        // If the place doesn't resolve to a reporting airport, return nil so the
+        // line falls through to normal evaluation. This keeps a sentence that
+        // merely *starts* with "weather" (e.g. "weather permitting…") — or a
+        // typo — from being hijacked into a weather error.
+        guard let airport = Self.resolveWeatherAirport(query) else { return nil }
+        let icao = airport.ident
+        let placeName = "\(airport.municipality ?? airport.name) (\(icao))"
+
+        let bridge = MetarCacheBridge.shared
+        MainActor.assumeIsolated {
+            bridge.prefetch(kind: .metar, icao: icao)
+            bridge.prefetch(kind: .taf, icao: icao)
+        }
+        let metarEntry = MainActor.assumeIsolated { bridge.cached(kind: .metar, icao: icao) }
+        let tafEntry = MainActor.assumeIsolated { bridge.cached(kind: .taf, icao: icao) }
+
+        guard metarEntry != nil || tafEntry != nil else {
+            return MetarLine(value: "Fetching weather for \(placeName)…", annotation: nil)
+        }
+
+        let tz = Self.weatherTimeZone(query: query, municipality: airport.municipality,
+                                      ident: icao, longitude: airport.longitude)
+        let metar = metarEntry.map { MetarParser.parse($0.raw) }
+        let taf = tafEntry.map { TafParser.parse($0.raw) }
+        let digest = WeatherDigest.make(place: placeName, metar: metar, taf: taf,
+                                        timeZone: tz, now: Date())
+
+        var lines: [String] = [digest.place, "\(digest.nowEmoji) \(digest.nowLine)"]
+        if !digest.hours.isEmpty {
+            lines.append(digest.hours.map { "\($0.emoji) \($0.label)" }.joined(separator: "  "))
+        }
+        for s in digest.outlook { lines.append("• \(s)") }
+
+        let annotation: LineResult.Annotation? = (metarEntry ?? tafEntry).map { e in
+            let refTime = Self.observationTime(in: e.raw) ?? e.fetchedAt
+            let age = Int(Date().timeIntervalSince(refTime))
+            return LineResult.Annotation(label: "updated \(Self.formatAge(age))",
+                                         tone: Self.freshnessTone(for: e.raw, kind: e.kind, ageSeconds: age))
+        }
+        return MetarLine(value: lines.joined(separator: "\n"), annotation: annotation)
+    }
+
+    /// Resolve a `weather` argument (4-letter ICAO, 3-letter IATA, or a city
+    /// name) to a reporting airport.
+    static func resolveWeatherAirport(_ query: String) -> AirportInfo? {
+        let db = AirportDatabase.shared
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        if !trimmed.contains(" ") {
+            let up = trimmed.uppercased()
+            if up.count == 4, up.allSatisfy(\.isLetter), let a = db.airport(forIdent: up) { return a }
+            if up.count == 3, up.allSatisfy(\.isLetter) {
+                if let a = db.airport(forIATA: up) { return a }
+                if let a = db.airport(matchingPlace: trimmed) { return a }
+                return db.airport(forIdent: up)
+            }
+        }
+        return db.airport(matchingPlace: trimmed)
+    }
+
+    /// Local time zone for outlook phrasing: prefer `CityResolver` (handles
+    /// cities and airport codes), else approximate from longitude (ignores DST
+    /// and political borders, but never wildly off — fine for time-of-day
+    /// buckets like "this evening").
+    static func weatherTimeZone(query: String, municipality: String?,
+                                ident: String, longitude: Double) -> TimeZone {
+        for candidate in [query, municipality, ident].compactMap({ $0 }) {
+            if let r = CityResolver.shared.cached(for: candidate),
+               let tz = TimeZone(identifier: r.timezoneId) {
+                return tz
+            }
+        }
+        // Fallback: approximate from longitude. No DST or political borders,
+        // but the right ballpark — and exact for no-DST zones like Japan.
+        let offset = Int((longitude / 15.0).rounded()) * 3600
+        return TimeZone(secondsFromGMT: offset) ?? .current
     }
 
     // MARK: - Runway lookup

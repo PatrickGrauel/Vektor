@@ -232,6 +232,50 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertEqual(r?.value?.contains("EUR"), true)
     }
 
+    // MARK: - Weather (non-pilot METAR/TAF digest)
+
+    func testWeatherCommandResolvesStation() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("weather Munich").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertNotEqual(r?.kind, .timezone)
+        // No live METAR in tests → a "Fetching…" placeholder, but the city
+        // must have resolved to the Munich station (EDDM), proving the command
+        // is recognised and the city→airport mapping works.
+        XCTAssertEqual(r?.value?.contains("EDDM"), true, r?.value ?? "nil")
+    }
+
+    func testWeatherResolvesCityIATAandICAO() {
+        XCTAssertEqual(NumiEngine.resolveWeatherAirport("Munich")?.ident, "EDDM")
+        XCTAssertEqual(NumiEngine.resolveWeatherAirport("MUC")?.ident, "EDDM")
+        XCTAssertEqual(NumiEngine.resolveWeatherAirport("EDDM")?.ident, "EDDM")
+        XCTAssertNil(NumiEngine.resolveWeatherAirport("Zzzznotaplace"))
+    }
+
+    func testWeatherTimeZoneTokyoIsUTCplus9() {
+        let tz = NumiEngine.weatherTimeZone(query: "Tokyo", municipality: "Tokyo",
+                                            ident: "RJTT", longitude: 139.78)
+        XCTAssertEqual(tz.secondsFromGMT(), 9 * 3600,
+                       "Tokyo must resolve to UTC+9, got \(tz.identifier) (\(tz.secondsFromGMT())s)")
+    }
+
+    func testWeatherInPhrasingResolves() throws {
+        let engine = try NumiEngine()
+        // "weather in Tokyo" should strip "in" and resolve to a Tokyo station.
+        let r = engine.evaluate("weather in Tokyo").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertEqual(r?.value?.contains("Tokyo"), true, r?.value ?? "nil")
+    }
+
+    func testWeatherWordMidSentenceNotHijacked() throws {
+        let engine = try NumiEngine()
+        // Starts with "weather" but isn't a command → must fall through, not be
+        // claimed as a weather result.
+        let r = engine.evaluate("weather permitting we leave at noon").first
+        XCTAssertNotEqual(r?.value?.contains("Fetching weather"), true, r?.value ?? "nil")
+        XCTAssertNotEqual(r?.value?.contains("EDDM"), true, r?.value ?? "nil")
+    }
+
     func testEuropeanDotAMPMConversion() throws {
         // `4.30pm` (dot separator, glued pm) should be normalised to
         // `4:30 pm` before the conversion-form regex runs.

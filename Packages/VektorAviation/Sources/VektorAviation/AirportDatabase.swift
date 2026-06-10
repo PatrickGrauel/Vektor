@@ -37,6 +37,10 @@ public final class AirportDatabase: @unchecked Sendable {
 
     private var byTier: [AirportInfo.Tier: [AirportInfo]] = [:]
     private var grid: [GridKey: [AirportInfo]] = [:]
+    private var byIATA: [String: AirportInfo] = [:]
+    /// City / municipality (diacritic-folded, lowercased) → its airports.
+    /// Used to resolve `weather Munich` → the busiest nearby station.
+    private var byMunicipality: [String: [AirportInfo]] = [:]
     private let lock = NSLock()
     private var loaded = false
 
@@ -94,6 +98,35 @@ public final class AirportDatabase: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    /// O(1) lookup by 3-letter IATA code (e.g. "MUC" → EDDM).
+    public func airport(forIATA iata: String) -> AirportInfo? {
+        ensureLoaded()
+        return byIATA[iata.uppercased()]
+    }
+
+    /// Best airport for a city / place name (e.g. "Munich", "New York").
+    /// Matches on municipality, preferring the largest tier so a city with
+    /// several fields resolves to its primary airport. Returns nil if no
+    /// airport's municipality matches.
+    public func airport(matchingPlace place: String) -> AirportInfo? {
+        ensureLoaded()
+        guard let candidates = byMunicipality[Self.placeKey(place)], !candidates.isEmpty else {
+            return nil
+        }
+        func rank(_ t: AirportInfo.Tier) -> Int {
+            switch t { case .large: return 0; case .medium: return 1; case .small: return 2 }
+        }
+        return candidates.min { rank($0.tier) < rank($1.tier) }
+    }
+
+    /// Normalised key for place matching: diacritic-folded + lowercased so
+    /// "München" / "Munich" / "munich" all collide sensibly.
+    private static func placeKey(_ s: String) -> String {
+        s.folding(options: .diacriticInsensitive, locale: Locale(identifier: "en_US"))
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public var entryCount: Int {
@@ -155,6 +188,10 @@ public final class AirportDatabase: @unchecked Sendable {
 
             byTier[tier, default: []].append(airport)
             grid[Self.cellKey(lat: lat, lon: lon), default: []].append(airport)
+            if let ia = airport.iata { byIATA[ia.uppercased()] = airport }
+            if let m = airport.municipality {
+                byMunicipality[Self.placeKey(m), default: []].append(airport)
+            }
         }
     }
 
