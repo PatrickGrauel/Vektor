@@ -1838,4 +1838,105 @@ final class NumiEngineTests: XCTestCase {
                       "Documented unit failures:\n" + failures.joined(separator: "\n"))
     }
 
+    // MARK: - Missing-unit hints (grey "EUR?" / "no unit" gutter hints)
+    //
+    // Currency tests would need live FX, so the engine-level tests use kg —
+    // the mechanism is unit-agnostic. Currency wording is covered by the
+    // pure-helper tests below, which run on formatted strings directly.
+
+    func testBareLineAmongUnitedGetsInferredUnitHint() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        a = 5 kg
+        b = 3
+        sum
+        """)
+        XCTAssertNil(r[0].hint, "united line must not be hinted")
+        XCTAssertEqual(r[1].hint, "kg?", "bare line in a kg block gets the inferred unit")
+        XCTAssertEqual(r[2].kind, .error, "mixed sum still fails — hints never change the math")
+        XCTAssertEqual(r[2].hint, "1 line has no unit")
+    }
+
+    func testNoHintsWhenAllLinesUnited() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        5 kg
+        3 kg
+        sum
+        """)
+        XCTAssertTrue(r.allSatisfy { $0.hint == nil }, "clean block must not be nagged")
+        XCTAssertEqual(r.last?.value, "8 kg")
+    }
+
+    func testNoHintsWhenAllLinesBare() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        1
+        2
+        sum
+        """)
+        XCTAssertTrue(r.allSatisfy { $0.hint == nil }, "plain arithmetic must not be nagged")
+        XCTAssertEqual(r.last?.value, "3")
+    }
+
+    func testHintsDoNotCrossBlankLineBlocks() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        5 kg
+
+        3
+        sum
+        """)
+        XCTAssertNil(r[2].hint, "the kg line is in another block — no hint on the bare 3")
+        XCTAssertEqual(r[3].value, "3", "sum windows only the post-blank block")
+    }
+
+    func testHintAppearsEvenWithoutAggregateLine() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        a = 5 kg
+        b = 3
+        """)
+        XCTAssertEqual(r[1].hint, "kg?", "hint flags the gap before the user ever types sum")
+    }
+
+    // MARK: Missing-unit hints — pure helpers (currency wording, shapes)
+
+    func testMissingUnitHintsInferSingleCurrency() {
+        let hints = NumiPreprocessor.missingUnitHints(
+            for: ["800 EUR", "150", "131.49 EUR", "400", "100"])
+        XCTAssertEqual(hints, [1: "EUR?", 3: "EUR?", 4: "EUR?"])
+    }
+
+    func testMissingUnitHintsNeutralWhenUnitsMixed() {
+        let hints = NumiPreprocessor.missingUnitHints(for: ["100 EUR", "50 USD", "3"])
+        XCTAssertEqual(hints, [2: "no unit"], "two distinct currencies — don't guess")
+    }
+
+    func testMissingUnitHintsHandleThousandsSpaces() {
+        let hints = NumiPreprocessor.missingUnitHints(for: ["1 563.36 EUR", "150"])
+        XCTAssertEqual(hints, [1: "EUR?"])
+    }
+
+    func testAggregateFailureHintCurrencyWording() {
+        XCTAssertEqual(
+            NumiPreprocessor.aggregateFailureHint(window: ["800 EUR", "150", "400"]),
+            "2 lines have no currency")
+        XCTAssertEqual(
+            NumiPreprocessor.aggregateFailureHint(window: ["5 kg", "3"]),
+            "1 line has no unit")
+        XCTAssertNil(
+            NumiPreprocessor.aggregateFailureHint(window: ["5 kg", "3 kg"]),
+            "clean window — the failure is something else, don't claim to know")
+    }
+
+    func testValueShapeIgnoresDatesAndTimes() {
+        XCTAssertEqual(NumiPreprocessor.valueShape("Thu Jun 4"), .other,
+                       "date strings must not enter the unit census")
+        XCTAssertEqual(NumiPreprocessor.valueShape("01:48:00"), .other)
+        XCTAssertEqual(NumiPreprocessor.valueShape("150.00"), .bare)
+        XCTAssertEqual(NumiPreprocessor.valueShape("-46"), .bare)
+        XCTAssertEqual(NumiPreprocessor.valueShape("8.5 kg"), .united("kg"))
+    }
+
 }

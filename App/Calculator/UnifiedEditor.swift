@@ -814,7 +814,10 @@ final class GutterView: NSView {
 
     /// Content key — when this changes for a given line, the cached
     /// entry is stale and gets recomputed. Tone is folded in because
-    /// it picks the colour for the freshness annotation.
+    /// it picks the colour for the freshness annotation. The hint is
+    /// folded in because it can change while the value stays identical —
+    /// typing a `thb` line *below* a bare `150` retro-attaches "EUR?" to
+    /// the 150's line, whose value text hasn't moved.
     private static func cacheKey(for r: LineResult) -> String {
         let value = r.value ?? ""
         let annLabel = r.annotation?.label ?? ""
@@ -825,7 +828,7 @@ final class GutterView: NSView {
         case .outdated?: annTone = "o"
         case nil:        annTone = "-"
         }
-        return "\(r.kind.rawValue)|\(value)|\(annLabel)|\(annTone)"
+        return "\(r.kind.rawValue)|\(value)|\(annLabel)|\(annTone)|\(r.hint ?? "")"
     }
 
     private func cachedEntry(for r: LineResult, textWidth: CGFloat) -> ResultCacheEntry {

@@ -934,6 +934,89 @@ struct NumiPreprocessor {
         )
     }
 
+    // MARK: - Missing-unit hints
+    //
+    // Pure analysis over a block's formatted values (the same window a
+    // bare `sum` totals over). The engine uses it to attach muted hints:
+    // a bare `150` sitting between `800 EUR` and `131.49 EUR` is exactly
+    // the line that makes `sum` throw (mathjs can't add Unit + number),
+    // so flag it where the unit would sit — without ever changing the math.
+
+    /// Shape of one formatted value for hint analysis.
+    enum ValueShape: Equatable {
+        /// Plain number, no unit — `"150"`, `"1 563.36"`.
+        case bare
+        /// Number with a trailing unit — `"800 EUR"`, `"8.5 kg"`.
+        case united(String)
+        /// Anything else (dates, times, text) — ignored by the analysis.
+        case other
+    }
+
+    static func valueShape(_ value: String) -> ValueShape {
+        let s = stripThousandsSpaces(value)
+        if s.range(of: #"^-?\d+(?:[.,]\d+)?$"#, options: .regularExpression) != nil {
+            return .bare
+        }
+        // Must be `<number> <unit>`-shaped: requiring the leading digit
+        // keeps date/text results ("Thu Jun 4") out of the unit census.
+        guard s.range(of: #"^-?[\d.,]"#, options: .regularExpression) != nil,
+              let unit = trailingUnit(of: s) else { return .other }
+        return .united(unit)
+    }
+
+    /// For a mixed block — some values united, some bare — returns
+    /// window-index → hint for every bare value: the inferred unit
+    /// (`"EUR?"`) when the block has exactly one distinct unit, a neutral
+    /// `"no unit"` when it mixes several. Empty when the block is clean
+    /// (all united, all bare, or no values), so plain arithmetic sheets
+    /// never get nagged.
+    static func missingUnitHints(for window: [String]) -> [Int: String] {
+        var distinctUnits: [String] = []
+        var bareIndices: [Int] = []
+        for (i, v) in window.enumerated() {
+            switch valueShape(v) {
+            case .bare:
+                bareIndices.append(i)
+            case .united(let u):
+                if !distinctUnits.contains(u) { distinctUnits.append(u) }
+            case .other:
+                break
+            }
+        }
+        guard !bareIndices.isEmpty, !distinctUnits.isEmpty else { return [:] }
+        let hint = distinctUnits.count == 1 ? "\(distinctUnits[0])?" : "no unit"
+        return Dictionary(uniqueKeysWithValues: bareIndices.map { ($0, hint) })
+    }
+
+    /// Reason line for a bare aggregate (`sum` / `average`) that failed
+    /// over a mixed window: "3 lines have no currency" / "1 line has no
+    /// unit". Says "currency" only when every distinct unit in the window
+    /// looks like a currency code (uppercase 2–5 letters — EUR, THB, BTC),
+    /// "unit" otherwise. Nil when the window isn't actually mixed (the
+    /// failure is something else — don't explain what we don't know).
+    static func aggregateFailureHint(window: [String]) -> String? {
+        var distinctUnits: [String] = []
+        var bareCount = 0
+        for v in window {
+            switch valueShape(v) {
+            case .bare:
+                bareCount += 1
+            case .united(let u):
+                if !distinctUnits.contains(u) { distinctUnits.append(u) }
+            case .other:
+                break
+            }
+        }
+        guard bareCount > 0, !distinctUnits.isEmpty else { return nil }
+        let allCurrency = distinctUnits.allSatisfy {
+            $0.range(of: #"^[A-Z]{2,5}$"#, options: .regularExpression) != nil
+        }
+        let noun = allCurrency ? "currency" : "unit"
+        return bareCount == 1
+            ? "1 line has no \(noun)"
+            : "\(bareCount) lines have no \(noun)"
+    }
+
     /// Best-effort: the last whitespace-separated token of a formatted
     /// value, if it looks like a unit identifier (letters, optional `^`
     /// or `/` for compound units, optional `²` / `³`). Returns nil for

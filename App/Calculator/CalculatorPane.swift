@@ -267,11 +267,26 @@ struct CalculatorPane: View {
     static func renderValue(_ r: LineResult) -> NSAttributedString {
         switch r.kind {
         case .error:
-            let blank = NSMutableAttributedString(string: " ")
-            blank.addAttribute(.font,
-                               value: NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
-                               range: NSRange(location: 0, length: blank.length))
-            return blank
+            // Errors render blank (Numi-style) — except when the engine
+            // attached a hint explaining the failure (a `sum` over a block
+            // that mixes united and bare values). The muted reason replaces
+            // the silent void so the user knows *why* there's no result.
+            let monoFont = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            guard let hint = r.hint, !hint.isEmpty else {
+                let blank = NSMutableAttributedString(string: " ")
+                blank.addAttribute(.font, value: monoFont,
+                                   range: NSRange(location: 0, length: blank.length))
+                return blank
+            }
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .right
+            paragraph.lineBreakMode = .byWordWrapping
+            let attr = NSMutableAttributedString(string: hint)
+            let range = NSRange(location: 0, length: attr.length)
+            attr.addAttribute(.font, value: monoFont, range: range)
+            attr.addAttribute(.paragraphStyle, value: paragraph, range: range)
+            attr.addAttribute(.foregroundColor, value: NSColor(VektorTheme.muted), range: range)
+            return attr
         default:
             let rawText = display(r)
             let baseColor = NSColor(color(r))
@@ -358,6 +373,18 @@ struct CalculatorPane: View {
                                                         .paragraphStyle: paragraph,
                                                     ]))
                 }
+            }
+            // Missing-unit hint ("EUR?" / "no unit") — muted, sitting right
+            // where the unit would go. Informational only; the value text
+            // is untouched. Hinted values are single-line numerics, so
+            // appending after the loop can't land mid-multiline.
+            if let hint = r.hint, !hint.isEmpty {
+                let h = NSMutableAttributedString(string: " " + hint)
+                let range = NSRange(location: 0, length: h.length)
+                h.addAttribute(.font, value: monoFont, range: range)
+                h.addAttribute(.paragraphStyle, value: paragraph, range: range)
+                h.addAttribute(.foregroundColor, value: NSColor(VektorTheme.muted), range: range)
+                result.append(h)
             }
             return result
         }

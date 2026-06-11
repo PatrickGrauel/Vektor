@@ -11,6 +11,15 @@ public struct LineResult: Equatable, Sendable {
     /// Optional secondary annotation (e.g. "updated 12 min ago" for METAR
     /// lines). Rendered alongside the value in smaller, age-aware colour.
     public let annotation: Annotation?
+    /// Muted inline hint, never part of the math. Two producers:
+    /// • a bare number in a block whose other lines carry a unit gets the
+    ///   inferred unit ("EUR?") — or "no unit" when the block mixes units —
+    ///   marking exactly the lines a `sum` over the block would choke on;
+    /// • a `sum`/`average` that failed over such a mixed block gets the
+    ///   reason ("3 lines have no currency") so the blank result explains
+    ///   itself. `var` so the evaluator can attach hints in a post-pass
+    ///   once the whole block has been seen.
+    public var hint: String?
 
     public enum Kind: String, Sendable {
         case empty
@@ -42,12 +51,14 @@ public struct LineResult: Equatable, Sendable {
         }
     }
 
-    public init(line: Int, raw: String, value: String?, kind: Kind, annotation: Annotation? = nil) {
+    public init(line: Int, raw: String, value: String?, kind: Kind,
+                annotation: Annotation? = nil, hint: String? = nil) {
         self.line = line
         self.raw = raw
         self.value = value
         self.kind = kind
         self.annotation = annotation
+        self.hint = hint
     }
 }
 
@@ -150,6 +161,22 @@ public final class NumiEngine {
         // section sums on its own, and excludes prior aggregate results so
         // stacked sums don't double-count.
         var aggregateWindow: [String] = []
+        // Results-array index of each window entry, kept in lockstep with
+        // `aggregateWindow`, so the block-end hint pass can write back onto
+        // the right lines.
+        var windowOrigins: [Int] = []
+
+        // Attach missing-unit hints for the block that just ended. Runs at
+        // every blank line and once after the loop: a bare line's hint
+        // depends on lines *below* it too (`150` before `5000 thb in eur`
+        // is only flaggable once the THB line has been seen), so hints
+        // can't be assigned while streaming through the block.
+        func applyBlockHints() {
+            guard !aggregateWindow.isEmpty else { return }
+            for (windowIdx, hint) in NumiPreprocessor.missingUnitHints(for: aggregateWindow) {
+                results[windowOrigins[windowIdx]].hint = hint
+            }
+        }
 
         // Open a quote-bridge transaction so stock prefetches are
         // book-kept across this whole evaluation. Pairs with the
@@ -170,7 +197,9 @@ public final class NumiEngine {
                 // totals only the lines since the blank, so two stacked
                 // expense lists sum independently. `previousValues` is left
                 // intact so `prev` still reaches back across the blank.
+                applyBlockHints()
                 aggregateWindow.removeAll()
+                windowOrigins.removeAll()
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .empty))
                 continue
             }
@@ -351,7 +380,14 @@ public final class NumiEngine {
             if str.hasPrefix("__ERR__") {
                 let errorRaw = String(str.dropFirst("__ERR__".count))
                 let msg = Self.humaniseError(errorRaw)
-                results.append(.init(line: idx, raw: raw, value: msg, kind: .error))
+                // A failed `sum`/`average` over a window that mixes united
+                // and bare values gets the reason as a hint — the editor
+                // renders errors blank, so without this the user stares at
+                // a silent void (the original "why does sum not work?").
+                let hint = prep.isAggregate
+                    ? NumiPreprocessor.aggregateFailureHint(window: aggregateWindow)
+                    : nil
+                results.append(.init(line: idx, raw: raw, value: msg, kind: .error, hint: hint))
             } else {
                 results.append(.init(line: idx, raw: raw, value: str, kind: .expression))
                 previousValues.append(str)
@@ -359,9 +395,11 @@ public final class NumiEngine {
                 // aggregate sums, so two `sum`s in a block don't double-count.
                 if !prep.isAggregate {
                     aggregateWindow.append(str)
+                    windowOrigins.append(results.count - 1)
                 }
             }
         }
+        applyBlockHints()
 
         return results
     }
