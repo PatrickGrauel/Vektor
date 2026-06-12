@@ -455,6 +455,17 @@ public final class NumiEngine {
             return nil
         }
 
+        // `<anything> in time` is ALWAYS duration formatting, never a
+        // geocode. Without this, `7,6km/40kmh in time` ends with " time",
+        // matches the "<TZ> time" suffix branch below, and CLGeocoder
+        // fuzzy-resolves "7,6km/40kmh in" to some city. Nobody asking for
+        // a place's local time phrases it "in time" — the tz phrases are
+        // "<place> time" / "time in <place>".
+        if line.range(of: #"(?i)\s+(?:to|in|as)\s+time\s*$"#,
+                      options: .regularExpression) != nil {
+            return nil
+        }
+
         // Duration syntax `<arith expr> in {hours,minutes,seconds}` → handled
         // by the math pipeline, not here. Refuse so it falls through to the
         // preprocessor.

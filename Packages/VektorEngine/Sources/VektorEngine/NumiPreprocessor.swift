@@ -492,9 +492,9 @@ struct NumiPreprocessor {
         )
     }
 
-    // MARK: - <calc> in {hours, minutes, seconds} → humanTime(...)
+    // MARK: - <calc> in {hours, minutes, seconds, time} → humanTime(...)
     //
-    // Three explicit input-unit directives. The body is plain arithmetic; the
+    // Explicit input-unit directives. The body is plain arithmetic; the
     // suffix tells the formatter how to interpret it. Output is the
     // human-readable `Xh Ymin Zsec` form (see `humanTime` in JS).
     //
@@ -503,26 +503,46 @@ struct NumiPreprocessor {
     //   60/60 in seconds  → 1sec
     //   prev in minutes   → (after rewritePrev runs) 13h 36min 00sec for prev=816
     //
+    // `in time` additionally accepts a unit-bearing body and means "format
+    // the body's duration": `7.6km/40kmh in time` → 11min 24sec. (The
+    // timezone parser explicitly refuses `… in time` lines so they reach
+    // this rewrite instead of being geocoded.)
+    //
     // Guarded by a numeric-only body check so timezone-style lines like
     // `1430 Berlin in hours` (which mix letters with the new suffix) fall
     // through untouched. This also blocks unit-bearing bodies like `1.8h in
     // hours` — users who want that should drop the unit (`1.8 in hours`).
     private func rewriteHumanTime(_ input: String) -> String {
-        let suffix = #"\s+(?:to|in|as)\s+(hours?|minutes?|seconds?)\s*$"#
+        let suffix = #"\s+(?:to|in|as)\s+(hours?|minutes?|seconds?|time)\s*$"#
         guard let r = input.range(of: suffix, options: .regularExpression) else {
             return input
         }
         let matched = input[r].trimmingCharacters(in: .whitespaces)
         let token = matched.split(separator: " ").last.map(String.init)?.lowercased() ?? ""
-        let unit: String
-        if token.hasPrefix("hour")        { unit = "hours" }
-        else if token.hasPrefix("minute") { unit = "minutes" }
-        else                              { unit = "seconds" }
 
         let body = input[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
         let allowed = CharacterSet(charactersIn: "0123456789.+-*/()% ")
         let hasDigit = body.contains(where: { $0.isNumber })
         let onlyAllowed = body.unicodeScalars.allSatisfy { allowed.contains($0) }
+
+        // `<expr> in time` — duration from whatever the body evaluates to.
+        // A bare-number body is read as hours; a unit-bearing body
+        // (`7.6km/40kmh`, `25 min`) is converted to hours first, then
+        // divided by `1 hours` to shed the unit, because humanTime takes a
+        // plain number. Pure preprocessor — no JS-bundle change.
+        if token == "time" {
+            guard hasDigit else { return input }
+            if onlyAllowed {
+                return "humanTime((\(body)), 'hours')"
+            }
+            return "humanTime(((\(body)) to hours) / (1 hours), 'hours')"
+        }
+
+        let unit: String
+        if token.hasPrefix("hour")        { unit = "hours" }
+        else if token.hasPrefix("minute") { unit = "minutes" }
+        else                              { unit = "seconds" }
+
         guard hasDigit, onlyAllowed else { return input }
         return "humanTime((\(body)), '\(unit)')"
     }

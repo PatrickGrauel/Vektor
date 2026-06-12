@@ -1983,6 +1983,41 @@ final class NumiEngineTests: XCTestCase {
                        "raw error was: \(r?.value ?? "<nil>")")
     }
 
+    // MARK: - `in time` duration formatting (and the timezone-hijack guard)
+
+    func testDistanceOverSpeedInTime() throws {
+        // 7.6 km at 40 km/h = 0.19 h = 11 min 24 s. This line used to end
+        // up in the timezone parser (suffix " time") and geocode
+        // "7,6km/40kmh in" to a city.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("7,6km/40kmh in time").first
+        XCTAssertEqual(r?.kind, .expression, "must not be hijacked as a timezone query")
+        XCTAssertEqual(r?.value, "11min 24sec", "got: \(r?.value ?? "<nil>")")
+    }
+
+    func testBareNumberInTimeReadsAsHours() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("0.19 in time").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertEqual(r?.value, "11min 24sec", "got: \(r?.value ?? "<nil>")")
+    }
+
+    func testDurationUnitBodyInTime() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("25 min in time").first
+        XCTAssertEqual(r?.kind, .expression)
+        // humanTime drops an exact-zero seconds tail.
+        XCTAssertEqual(r?.value, "25min", "got: \(r?.value ?? "<nil>")")
+    }
+
+    func testPlaceTimePhraseStillReachesTimezoneParser() throws {
+        // The `in time` refusal must not eat the legit "<place> time"
+        // phrase (no `in`) — that's still a timezone query.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("Berlin time").first
+        XCTAssertEqual(r?.kind, .timezone, "got: \(String(describing: r?.kind))")
+    }
+
     func testValueShapeIgnoresDatesAndTimes() {
         XCTAssertEqual(NumiPreprocessor.valueShape("Thu Jun 4"), .other,
                        "date strings must not enter the unit census")
