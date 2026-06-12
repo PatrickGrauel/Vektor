@@ -1930,6 +1930,59 @@ final class NumiEngineTests: XCTestCase {
             "clean window — the failure is something else, don't claim to know")
     }
 
+    // MARK: - Trailing-unit distribution + incompatible-unit flagging
+
+    func testTrailingUnitDistributesOverBareArithmetic() throws {
+        let engine = try NumiEngine()
+        XCTAssertEqual(engine.evaluate("60+47 km").first?.value, "107 km")
+        XCTAssertEqual(engine.evaluate("1+1 km").first?.value, "2 km")
+        XCTAssertEqual(engine.evaluate("60 + 47 km").first?.value, "107 km")
+    }
+
+    func testTrailingUnitDistributionFeedsConversion() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("60+47 km in mi").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertEqual(r?.value?.contains("mi"), true,
+                       "got: \(r?.value ?? "<nil>")")
+    }
+
+    func testTrailingTokenThatIsAVariableStaysImplicitMultiplication() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        x = 5
+        2+3 x
+        """)
+        XCTAssertEqual(r[1].value, "17",
+                       "`2+3 x` must stay `2 + 3·x`, not become `(2+3)·x`")
+    }
+
+    func testDivisionWithTrailingUnitStillWorks() throws {
+        // The shape that already worked via implicit multiplication —
+        // distribution must not regress it.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("7.6/107 kmh").first
+        XCTAssertEqual(r?.kind, .expression)
+        XCTAssertEqual(r?.value?.contains("kmh"), true,
+                       "got: \(r?.value ?? "<nil>")")
+    }
+
+    func testIncompatibleUnitsAreFlaggedNotFixed() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("1 kmh + 1 km").first
+        XCTAssertEqual(r?.kind, .error,
+                       "speed + distance is nonsense and must stay an error")
+        XCTAssertEqual(r?.hint, "incompatible units")
+    }
+
+    func testUnitPlusBareNumberWithinOneLineIsFlagged() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("2 kg + 2").first
+        XCTAssertEqual(r?.kind, .error)
+        XCTAssertEqual(r?.hint, "unit + plain number",
+                       "raw error was: \(r?.value ?? "<nil>")")
+    }
+
     func testValueShapeIgnoresDatesAndTimes() {
         XCTAssertEqual(NumiPreprocessor.valueShape("Thu Jun 4"), .other,
                        "date strings must not enter the unit census")

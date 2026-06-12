@@ -121,6 +121,17 @@ public final class NumiEngine {
         knownUnitNames.contains(token.lowercased())
     }
 
+    /// Prefix-aware variant: `knownUnitNames` holds the registry's *base*
+    /// names (`m`, `g`, `b`), but mathjs composes prefixed forms (`km`,
+    /// `kg`, `Mb`) at parse time, so they're absent from the snapshot.
+    /// Ask mathjs itself; the token is regex-constrained by callers (no
+    /// quotes/backslashes), so embedding it in the JS literal is safe.
+    func isParsableUnitToken(_ token: String) -> Bool {
+        if isKnownUnit(token) { return true }
+        let js = "(() => { try { return math.Unit.isValuelessUnit('\(token)'); } catch (e) { return false; } })()"
+        return context.evaluateScript(js)?.toBool() ?? false
+    }
+
     /// Posted whenever fresh FX or crypto rates land in the JSContext.
     /// Views that re-evaluate documents (calculator gutter) should listen
     /// for this so currency conversions update without the user having
@@ -345,7 +356,8 @@ public final class NumiEngine {
 
             let prep = preprocessor.transform(raw,
                                               previousValues: previousValues,
-                                              aggregateValues: aggregateWindow)
+                                              aggregateValues: aggregateWindow,
+                                              isKnownUnit: { self.isParsableUnitToken($0) })
             if prep.isLabelOnly {
                 results.append(.init(line: idx, raw: raw, value: nil, kind: .label))
                 continue
@@ -380,13 +392,33 @@ public final class NumiEngine {
             if str.hasPrefix("__ERR__") {
                 let errorRaw = String(str.dropFirst("__ERR__".count))
                 let msg = Self.humaniseError(errorRaw)
-                // A failed `sum`/`average` over a window that mixes united
-                // and bare values gets the reason as a hint — the editor
-                // renders errors blank, so without this the user stares at
-                // a silent void (the original "why does sum not work?").
-                let hint = prep.isAggregate
-                    ? NumiPreprocessor.aggregateFailureHint(window: aggregateWindow)
-                    : nil
+                // The editor renders errors blank, so failures the user is
+                // likely to hit get a muted reason as a hint instead of a
+                // silent void (the original "why does sum not work?"):
+                // • a failed `sum`/`average` over a window that mixes
+                //   united and bare values;
+                // • adding/subtracting incompatible units (`1 kmh + 1 km`)
+                //   — mathjs throws "Units do not match";
+                // • adding/subtracting a unit and a bare number within one
+                //   line (`2 kg + 2`) — "…Scalar … actual: Unit".
+                let hint: String?
+                if prep.isAggregate {
+                    hint = NumiPreprocessor.aggregateFailureHint(window: aggregateWindow)
+                } else if errorRaw.contains("Units do not match") {
+                    hint = "incompatible units"
+                } else if errorRaw.contains("Unexpected type of argument"),
+                          errorRaw.contains("Unit"),
+                          errorRaw.contains("function add") || errorRaw.contains("function subtract") {
+                    // Covers add/addScalar/subtract/subtractScalar with the
+                    // Unit on either side — mathjs mirrors the message
+                    // ("actual: Unit" vs "expected: Unit") depending on
+                    // which operand carries the unit. Gated on add/subtract
+                    // so `sqrt(2 kg)` — same message family, different
+                    // problem — stays unhinted.
+                    hint = "unit + plain number"
+                } else {
+                    hint = nil
+                }
                 results.append(.init(line: idx, raw: raw, value: msg, kind: .error, hint: hint))
             } else {
                 results.append(.init(line: idx, raw: raw, value: str, kind: .expression))

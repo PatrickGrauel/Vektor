@@ -18,7 +18,8 @@ struct NumiPreprocessor {
 
     func transform(_ raw: String,
                    previousValues: [String],
-                   aggregateValues: [String]) -> Output {
+                   aggregateValues: [String],
+                   isKnownUnit: (String) -> Bool = { _ in false }) -> Output {
         var line = raw
 
         // Strip trailing `//` line comments so an expression followed
@@ -102,6 +103,9 @@ struct NumiPreprocessor {
         s = rewritePrev(s, previousValues: previousValues)
         s = rewriteHumanTime(s)
         s = rewriteInchAmbiguity(s)
+        // Before conversion handling, so `60+47 km in mi` becomes
+        // `(60+47) km in mi` and the conversion pass sees a sane LHS.
+        s = rewriteTrailingUnitDistribution(s, isKnownUnit: isKnownUnit)
         s = rewriteConversion(s)
         s = rewriteAggregates(s, values: aggregateValues)
 
@@ -758,6 +762,41 @@ struct NumiPreprocessor {
             return "\(groups[1]) inch"
         }
         return s
+    }
+
+    // MARK: - Trailing-unit distribution (`60+47 km` → `(60+47) km`)
+    //
+    // mathjs gives implicit multiplication higher precedence than `+`/`-`,
+    // so `60+47 km` parses as `60 + (47 km)` — number plus Unit — and
+    // errors, while the user obviously means `(60+47) km`. Distribute a
+    // trailing unit over the whole expression, but ONLY when the
+    // expression is pure bare-number arithmetic:
+    //
+    //   • the LHS may contain digits, operators, parens, dots, spaces —
+    //     and nothing else. An expression already carrying a unit
+    //     anywhere (`1 kmh + 1 km`) never matches, so genuinely mixed
+    //     units keep surfacing mathjs's mismatch error instead of being
+    //     silently "fixed" into nonsense;
+    //   • the trailing token must be a registered math.js unit or a
+    //     known currency code — a user variable (`x = 5` … `2+3 x`)
+    //     stays implicit multiplication.
+    //
+    // An optional `in/to/as <target>` conversion tail is preserved and
+    // handled by `rewriteConversion` right after this pass.
+
+    private func rewriteTrailingUnitDistribution(_ input: String,
+                                                 isKnownUnit: (String) -> Bool) -> String {
+        let pattern = #"^([0-9.()+\-*/ ]+) ([A-Za-z][A-Za-z0-9/^°²³]*)((?:\s+(?:in|into|as|to)\s+\S+)?)$"#
+        return replaceMatches(in: input, pattern: pattern) { groups in
+            let expr = groups[1].trimmingCharacters(in: .whitespaces)
+            let unit = groups[2]
+            // Plain `107 km` has no operator — nothing to distribute over.
+            guard expr.rangeOfCharacter(from: CharacterSet(charactersIn: "+-*/")) != nil,
+                  expr.rangeOfCharacter(from: .decimalDigits) != nil,
+                  isKnownUnit(unit) || Self.currencyCodes.contains(unit.uppercased())
+            else { return nil }
+            return "(\(expr)) \(unit)\(groups[3])"
+        }
     }
 
     // MARK: - Conversion ("X in Y", "X to Y", "X as Y" → "X to Y")
