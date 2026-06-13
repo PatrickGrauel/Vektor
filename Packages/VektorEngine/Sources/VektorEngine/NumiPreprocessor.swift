@@ -903,7 +903,7 @@ struct NumiPreprocessor {
 
     // MARK: - Aggregates: `sum` / `total` / `average` / `avg`
     //
-    // Handles four shapes:
+    // Handles these shapes:
     //
     //   sum                  → sum of previous values, in the LAST value's
     //                          unit (so `100 USD / 200 USD / 300 EUR / sum`
@@ -912,17 +912,28 @@ struct NumiPreprocessor {
     //   sum to <unit>        → explicit target unit
     //   sum in <unit>        → ditto (in is alias for to)
     //   sum as <unit>        → ditto
+    //   <name> = sum         → assign the total to `name` (usable in later
+    //                          lines, e.g. a chained loadsheet: `ZFW = sum`
+    //                          then `ramp = ZFW + fuel`) AND still display
+    //                          the value. Combines with the unit forms:
+    //                          `total = sum to kg`.
     //
     // Same shapes for `total`, `average`, `avg`. Works for any mathjs unit
     // — currencies, lengths, masses, temperatures, etc. — because the
     // result is just `<base-call>` with a trailing `to <unit>` appended.
 
-    /// Matches a bare aggregate line: `sum` / `total` / `average` / `avg`,
-    /// optionally followed by `to|in|as <unit>`. Compiled once (this runs
-    /// per line) and the single source of truth for `isAggregateLine`.
+    /// Matches a (optionally named) aggregate line: `sum` / `total` /
+    /// `average` / `avg`, optionally prefixed by `<identifier> =` and/or
+    /// suffixed by `to|in|as <unit>`. Compiled once (this runs per line)
+    /// and the single source of truth for `isAggregateLine`. Groups:
+    /// 1 = assignment target (optional), 2 = kind, 3 = target unit (optional).
+    ///
+    /// The name must be a bare mathjs identifier so `sum = 5` (assigning a
+    /// literal *to* a var called sum) doesn't match — only `<name> = sum`
+    /// (an aggregate on the right) does.
     private static let aggregateRegex: NSRegularExpression? =
         try? NSRegularExpression(
-            pattern: #"^(sum|total|average|avg)(?:\s+(?:to|in|as)\s+(\S+))?$"#,
+            pattern: #"^(?:([A-Za-z_][A-Za-z0-9_]*)\s*=\s*)?(sum|total|average|avg)(?:\s+(?:to|in|as)\s+(\S+))?$"#,
             options: [.caseInsensitive])
 
     /// True when `line` is a bare aggregate keyword line. Used by the engine
@@ -945,13 +956,25 @@ struct NumiPreprocessor {
                                     range: NSRange(location: 0, length: ns.length))
         else { return input }
 
-        let kind = ns.substring(with: m.range(at: 1)).lowercased()
+        let assignTo: String? = {
+            let r = m.range(at: 1)
+            return r.location == NSNotFound ? nil : ns.substring(with: r)
+        }()
+        let kind = ns.substring(with: m.range(at: 2)).lowercased()
         let explicitUnit: String? = {
-            let r = m.range(at: 2)
+            let r = m.range(at: 3)
             return r.location == NSNotFound ? nil : ns.substring(with: r)
         }()
 
-        if values.isEmpty { return "0" }
+        // Wrap the aggregate expression in `name = …` when the line named a
+        // target, so mathjs binds the variable and the assignment's value
+        // still renders in the gutter. No name → expression unchanged.
+        func assigned(_ expr: String) -> String {
+            guard let name = assignTo else { return expr }
+            return "\(name) = \(expr)"
+        }
+
+        if values.isEmpty { return assigned("0") }
 
         // Strip thousands-spaces from every value so mathjs doesn't read
         // "1 800 ft" as "1 × 800 ft". Without this the sum quietly went
@@ -966,7 +989,7 @@ struct NumiPreprocessor {
         // to the last value's trailing unit so currencies and lengths
         // come out in the unit the user just typed.
         let target = explicitUnit ?? Self.trailingUnit(of: values.last)
-        guard let target else { return base }
+        guard let target else { return assigned(base) }
         // `sum in hours/minutes/seconds` reuses the humanTime formatter so the
         // aggregate output matches a single-line `<expr> in <unit>`.
         let lower = target.lowercased()
@@ -977,9 +1000,9 @@ struct NumiPreprocessor {
             return nil
         }()
         if let humanUnit {
-            return "humanTime((\(base)), '\(humanUnit)')"
+            return assigned("humanTime((\(base)), '\(humanUnit)')")
         }
-        return "(\(base)) to \(target)"
+        return assigned("(\(base)) to \(target)")
     }
 
     /// Remove space-between-digits used as a thousands separator while

@@ -2018,6 +2018,80 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertEqual(r?.kind, .timezone, "got: \(String(describing: r?.kind))")
     }
 
+    // MARK: - Named / assignable totals (`ZFW = sum`)
+
+    func testNamedSumBindsAndDisplays() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        Empty = 553
+        Crew = 70*2
+        Luggage = 10
+        ZFW = sum
+        """)
+        XCTAssertEqual(r[3].kind, .expression, "named sum must produce a value, not an error")
+        XCTAssertEqual(r[3].value, "703", "got: \(r[3].value ?? "<nil>")")
+    }
+
+    func testNamedTotalIsReusableInLaterLine() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        Empty = 553
+        Crew = 140
+        ZFW = sum
+        Fuel = 120
+        Ramp = ZFW + Fuel
+        """)
+        XCTAssertEqual(r[2].value, "693", "ZFW = sum")
+        XCTAssertEqual(r[4].value, "813", "Ramp must see ZFW as a bound variable")
+    }
+
+    func testNamedTotalExcludedFromLaterSum() throws {
+        // A named subtotal must not double-count when a later bare sum
+        // totals the same block.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        Empty = 553
+        Crew = 140
+        ZFW = sum
+        Fuel = 120
+        sum
+        """)
+        XCTAssertEqual(r[2].value, "693")
+        XCTAssertEqual(r[4].value, "813", "second sum = 553+140+120; ZFW must be excluded")
+    }
+
+    func testNamedAverage() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        10
+        20
+        30
+        avg_weight = average
+        """)
+        XCTAssertEqual(r[3].value, "20", "got: \(r[3].value ?? "<nil>")")
+    }
+
+    func testAssignLiteralToVariableNamedSumStillWorks() throws {
+        // Regression: `sum = 5` assigns 5 to a var called sum — it is NOT an
+        // aggregate and must not be hijacked by the named-aggregate match.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        sum = 5
+        sum + 1
+        """)
+        XCTAssertEqual(r[0].value, "5")
+        XCTAssertEqual(r[1].value, "6")
+    }
+
+    func testNamedAggregateRecognition() {
+        XCTAssertTrue(NumiPreprocessor.isAggregateLine("ZFW = sum"))
+        XCTAssertTrue(NumiPreprocessor.isAggregateLine("total = average to kg"))
+        XCTAssertFalse(NumiPreprocessor.isAggregateLine("sum = 5"),
+                       "`sum = 5` is a plain assignment, not an aggregate")
+        XCTAssertFalse(NumiPreprocessor.isAggregateLine("x = sum + 1"),
+                       "only a pure `name = sum` assigns a total")
+    }
+
     func testValueShapeIgnoresDatesAndTimes() {
         XCTAssertEqual(NumiPreprocessor.valueShape("Thu Jun 4"), .other,
                        "date strings must not enter the unit census")
