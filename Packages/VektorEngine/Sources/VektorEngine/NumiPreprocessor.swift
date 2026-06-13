@@ -71,6 +71,11 @@ struct NumiPreprocessor {
         let isAggregate = Self.isAggregateLine(s)
 
         s = rewriteCommaDecimals(s)
+        // Accept the engine's OWN formatted output back as input: results
+        // carry thousands-grouping spaces (`1 000`), so paste one into a new
+        // line and it must still parse. Collapses only true 3-digit groups,
+        // so `100 cm` and unrelated `2 3` are left alone.
+        s = collapseGroupedThousands(s)
         // Date math runs FIRST: it can replace `days between … and …` with
         // a literal number that subsequent passes treat as a normal value.
         s = rewriteDateMath(s)
@@ -804,9 +809,21 @@ struct NumiPreprocessor {
     // An optional `in/to/as <target>` conversion tail is preserved and
     // handled by `rewriteConversion` right after this pass.
 
+    /// Collapse spaces inside a space-grouped integer (`1 000` → `1000`,
+    /// `12 345 678` → `12345678`). Matches only `\d{1,3}( \d{3})+`, so it
+    /// never merges a number and a unit (`100 cm`) or two unrelated numbers
+    /// (`2 3`). Lets users paste a formatted result straight back in.
+    private func collapseGroupedThousands(_ input: String) -> String {
+        replaceMatches(in: input, pattern: #"\d{1,3}(?: \d{3})+(?!\d)"#) { groups in
+            groups[0].replacingOccurrences(of: " ", with: "")
+        }
+    }
+
     private func rewriteTrailingUnitDistribution(_ input: String,
                                                  isKnownUnit: (String) -> Bool) -> String {
-        let pattern = #"^([0-9.()+\-*/ ]+) ([A-Za-z][A-Za-z0-9/^°²³]*)((?:\s+(?:in|into|as|to)\s+\S+)?)$"#
+        // The space between the expression and the unit is optional, so a
+        // glued `60+47km` distributes the same as `60+47 km`.
+        let pattern = #"^([0-9.()+\-*/ ]+?)\s*([A-Za-z][A-Za-z0-9/^°²³]*)((?:\s+(?:in|into|as|to)\s+\S+)?)$"#
         return replaceMatches(in: input, pattern: pattern) { groups in
             let expr = groups[1].trimmingCharacters(in: .whitespaces)
             let unit = groups[2]
@@ -1025,6 +1042,17 @@ struct NumiPreprocessor {
         // `sum in hours/minutes/seconds` reuses the humanTime formatter so the
         // aggregate output matches a single-line `<expr> in <unit>`.
         let lower = target.lowercased()
+        // `sum in time` — format the total as a duration, mirroring the
+        // single-line `<expr> in time` rewrite: unit-bearing values (minutes,
+        // hours) convert to hours then shed the unit; bare values read as
+        // hours. Without this the `time` target fell through to `to time` and
+        // mathjs errored on the unknown unit.
+        if lower == "time" {
+            let body = Self.trailingUnit(of: values.last) != nil
+                ? "((\(base)) to hours) / (1 hours)"
+                : base
+            return assigned("humanTime((\(body)), 'hours')")
+        }
         let humanUnit: String? = {
             if lower.hasPrefix("hour")   { return "hours" }
             if lower.hasPrefix("minute") { return "minutes" }

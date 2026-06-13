@@ -401,23 +401,28 @@ public final class NumiEngine {
                 //   — mathjs throws "Units do not match";
                 // • adding/subtracting a unit and a bare number within one
                 //   line (`2 kg + 2`) — "…Scalar … actual: Unit".
-                let hint: String?
+                var hint: String? = nil
+                // An aggregate over a window with bare-among-united values
+                // gets the specific "N lines have no unit" reason.
                 if prep.isAggregate {
                     hint = NumiPreprocessor.aggregateFailureHint(window: aggregateWindow)
-                } else if errorRaw.contains("Units do not match") {
-                    hint = "incompatible units"
-                } else if errorRaw.contains("Unexpected type of argument"),
-                          errorRaw.contains("Unit"),
-                          errorRaw.contains("function add") || errorRaw.contains("function subtract") {
-                    // Covers add/addScalar/subtract/subtractScalar with the
-                    // Unit on either side — mathjs mirrors the message
-                    // ("actual: Unit" vs "expected: Unit") depending on
-                    // which operand carries the unit. Gated on add/subtract
-                    // so `sqrt(2 kg)` — same message family, different
-                    // problem — stays unhinted.
-                    hint = "unit + plain number"
-                } else {
-                    hint = nil
+                }
+                // Otherwise (or when the aggregate's values are all united but
+                // of incompatible DIMENSIONS — `5 kg / 3 km / sum`, where the
+                // reason above is nil), classify by the mathjs error text.
+                if hint == nil {
+                    if errorRaw.contains("Units do not match") {
+                        hint = "incompatible units"
+                    } else if errorRaw.contains("Unexpected type of argument"),
+                              errorRaw.contains("Unit"),
+                              errorRaw.contains("function add") || errorRaw.contains("function subtract") {
+                        // add/addScalar/subtract/subtractScalar with the Unit
+                        // on either side — mathjs mirrors the message
+                        // ("actual: Unit" vs "expected: Unit") by operand.
+                        // Gated on add/subtract so `sqrt(2 kg)` — same message
+                        // family, different problem — stays unhinted.
+                        hint = "unit + plain number"
+                    }
                 }
                 results.append(.init(line: idx, raw: raw, value: msg, kind: .error, hint: hint))
             } else {

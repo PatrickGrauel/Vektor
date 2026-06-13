@@ -2236,6 +2236,84 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertEqual(r[8].value, "2.5 h", "Flight_time")
     }
 
+    // MARK: - Audit fixes (glued units · sum in time · grouped input · mixed-dim sum)
+
+    func testGluedUnitDistributesOverArithmetic() throws {
+        let engine = try NumiEngine()
+        XCTAssertEqual(engine.evaluate("60+47km").first?.value, "107 km")
+        XCTAssertEqual(engine.evaluate("1+1km").first?.value, "2 km")
+        XCTAssertEqual(engine.evaluate("2*3km").first?.value, "6 km")
+    }
+
+    func testGluedTokenThatIsAVariableStaysMultiplication() throws {
+        // `3x` is implicit multiplication, not "distribute unit x".
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        x = 5
+        2+3x
+        """)
+        XCTAssertEqual(r[1].value, "17", "got: \(r[1].value ?? "<nil>")")
+    }
+
+    func testSumInTimeFormatsDuration() throws {
+        let engine = try NumiEngine()
+        let dur = engine.evaluate("""
+        10 min
+        20 min
+        sum in time
+        """)
+        XCTAssertEqual(dur[2].kind, .expression, "sum in time must not error")
+        XCTAssertTrue((dur[2].value ?? "").contains("30min"), "got: \(dur[2].value ?? "<nil>")")
+
+        // Bare values read as hours.
+        let hrs = engine.evaluate("""
+        1
+        2
+        sum in time
+        """)
+        XCTAssertTrue((hrs[2].value ?? "").contains("3h"), "got: \(hrs[2].value ?? "<nil>")")
+    }
+
+    func testGroupedThousandsInputAccepted() throws {
+        // The engine must eat its own space-grouped output.
+        let engine = try NumiEngine()
+        XCTAssertEqual(engine.evaluate("1 000 + 5").first?.value, "1 005")
+        XCTAssertEqual(engine.evaluate("1 000 000 - 1").first?.value, "999 999")
+        // Combines with single-letter conversion + grouping in one line.
+        XCTAssertEqual(engine.evaluate("2 000 g in kg").first?.value, "2 kg")
+    }
+
+    func testNumberSpaceUnitNotMerged() throws {
+        // `100 cm` (number-space-unit) must NOT be collapsed to `100cm`-noise.
+        let engine = try NumiEngine()
+        XCTAssertEqual(engine.evaluate("50 km + 50 km").first?.value, "100 km")
+    }
+
+    func testMixedDimensionSumIsFlagged() throws {
+        // `5 kg / 3 km / sum` — all united but incompatible dimensions. Was a
+        // silent blank (aggregate branch only explained bare-among-united).
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        5 kg
+        3 km
+        sum
+        """)
+        XCTAssertEqual(r[2].kind, .error)
+        XCTAssertEqual(r[2].hint, "incompatible units")
+    }
+
+    func testBareAmongUnitedStillWinsSpecificHint() throws {
+        // Regression: when a bare number IS present, keep the precise reason.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        5 kg
+        3 km
+        2
+        sum
+        """)
+        XCTAssertEqual(r[3].hint, "1 line has no unit")
+    }
+
     func testValueShapeIgnoresDatesAndTimes() {
         XCTAssertEqual(NumiPreprocessor.valueShape("Thu Jun 4"), .other,
                        "date strings must not enter the unit census")
