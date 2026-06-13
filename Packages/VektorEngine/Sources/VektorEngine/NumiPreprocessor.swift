@@ -106,7 +106,7 @@ struct NumiPreprocessor {
         // Before conversion handling, so `60+47 km in mi` becomes
         // `(60+47) km in mi` and the conversion pass sees a sane LHS.
         s = rewriteTrailingUnitDistribution(s, isKnownUnit: isKnownUnit)
-        s = rewriteConversion(s)
+        s = rewriteConversion(s, isKnownUnit: isKnownUnit)
         s = rewriteAggregates(s, values: aggregateValues)
 
         // If the original line used feet-inches notation AND the user
@@ -821,7 +821,7 @@ struct NumiPreprocessor {
 
     // MARK: - Conversion ("X in Y", "X to Y", "X as Y" → "X to Y")
 
-    private func rewriteConversion(_ input: String) -> String {
+    private func rewriteConversion(_ input: String, isKnownUnit: (String) -> Bool) -> String {
         var s = input
         // math.js's `to` operator has LOWER precedence than `*` / `/` / `+`
         // etc., so `100 EUR in IDR * 2` parses as `100 EUR to (IDR * 2)` and
@@ -869,13 +869,20 @@ struct NumiPreprocessor {
         )
 
         // math.js uses "to" for unit conversion. Normalize Numi's "in" / "as" / "into".
-        // Careful: "in" is also the unit "inches" in math.js, so we only rewrite when
-        // followed by a recognised unit/currency keyword.
-        s = s.replacingOccurrences(
-            of: "\\s+\(convWord)\\s+(\(unit))",
-            with: " to $1",
-            options: .regularExpression
-        )
+        // "in" is also the inch unit, and mathjs reads a bare `<number> in` as
+        // inches — so this swap is what stops `45 kg / 0.72 in L` collapsing to
+        // `0.72 inch · L` (→ the infamous `kg / in^4`). A 2+ letter target
+        // converts as-is: that covers multi-letter units AND currency codes,
+        // which are registered into mathjs only after FX rates land and so are
+        // absent from the init-time unit snapshot `isKnownUnit` checks. A
+        // SINGLE-letter target (L, m, g, s, h, K, N…) converts only when it's a
+        // real mathjs unit, so a 1-char variable in `x in y` isn't hijacked.
+        s = replaceMatches(in: s,
+                           pattern: #"\s+(?:in|into|as|to)\s+([A-Za-z]+|°[A-Za-z])"#) { groups in
+            let target = groups[1]
+            guard target.count >= 2 || isKnownUnit(target) else { return nil }
+            return " to \(target)"
+        }
         // `min` collides with math.js's `min()` function — when used as a
         // conversion target, force the unambiguous unit spelling.
         s = s.replacingOccurrences(

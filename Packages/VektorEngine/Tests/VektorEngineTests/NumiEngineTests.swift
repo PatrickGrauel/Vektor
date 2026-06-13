@@ -2167,6 +2167,75 @@ final class NumiEngineTests: XCTestCase {
         XCTAssertEqual(r[4].value, "300", "named aggregates excluded from each other's window")
     }
 
+    // MARK: - Single-letter unit conversions (`in L`, `in m`, `in h`, `in g`)
+
+    func testSingleLetterUnitConversions() throws {
+        let engine = try NumiEngine()
+        XCTAssertEqual(engine.evaluate("100 cm in m").first?.value, "1 m")
+        XCTAssertEqual(engine.evaluate("2 kg in g").first?.value, "2 000 g")
+        XCTAssertEqual(engine.evaluate("60 min in h").first?.value, "1 h")
+        let ft = engine.evaluate("5 ft in m").first?.value ?? ""
+        XCTAssertTrue(ft.contains("1.524") && ft.contains("m"), "got: \(ft)")
+    }
+
+    func testSingleLetterConversionDoesNotHijackVariables() throws {
+        // `q` is not a unit, so `5 ft in q` must stay `in q` (not `to q`) and
+        // fall through — the single-letter path is gated on isKnownUnit.
+        let engine = try NumiEngine()
+        let pre = NumiPreprocessor()
+        let rw = pre.transform("5 ft in q", previousValues: [], aggregateValues: [],
+                               isKnownUnit: { engine.isParsableUnitToken($0) }).rewritten
+        XCTAssertFalse(rw.contains("to q"), "non-unit single letter must not convert; got: \(rw)")
+    }
+
+    func testCurrencyConversionStillRewrites() throws {
+        // Regression: currencies are 3-letter and registered post-init, so
+        // they must keep converting via the length path (not isKnownUnit).
+        let engine = try NumiEngine()
+        let pre = NumiPreprocessor()
+        let rw = pre.transform("100 EUR in USD", previousValues: [], aggregateValues: [],
+                               isKnownUnit: { engine.isParsableUnitToken($0) }).rewritten
+        XCTAssertTrue(rw.contains("to USD"), "got: \(rw)")
+    }
+
+    func testMassToVolumeWithoutDensityFlagsIncompatible() throws {
+        // The bug that produced `1.02 kg / in^4`. Now: a clean flag, because
+        // dividing kg by a bare number then asking for litres is dimensionless
+        // nonsense — the user needs a density (kg/L).
+        let engine = try NumiEngine()
+        let r = engine.evaluate("45 kg / 0.72 in L").first
+        XCTAssertEqual(r?.kind, .error)
+        XCTAssertEqual(r?.hint, "incompatible units", "got value: \(r?.value ?? "<nil>")")
+    }
+
+    func testFuelMassToVolumeWithDensity() throws {
+        // The correct form: divide by a density carrying kg/L (parens matter
+        // so `/L` doesn't bind to the wrong operand).
+        let engine = try NumiEngine()
+        XCTAssertEqual(engine.evaluate("45 kg / (0.72 kg/L)").first?.value, "62.5 L")
+    }
+
+    func testFuelLoadsheetEndToEnd() throws {
+        // The user's sheet, with divisors given their units. Exercises named
+        // totals + cross-line variables + single-letter conversion together.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        Empty = 553 kg
+        Crew = 75 kg + 75 kg
+        Luggage = 10 kg
+        OEKK = sum
+
+        Max_TO = 758 kg
+        Max_Fuel_kg = Max_TO - OEKK
+        Max_fuel_L = Max_Fuel_kg / (0.72 kg/L)
+        Flight_time = Max_fuel_L / (25 L/h) in h
+        """)
+        XCTAssertEqual(r[3].value, "713 kg", "OEKK")
+        XCTAssertEqual(r[6].value, "45 kg", "Max_Fuel_kg")
+        XCTAssertEqual(r[7].value, "62.5 L", "Max_fuel_L")
+        XCTAssertEqual(r[8].value, "2.5 h", "Flight_time")
+    }
+
     func testValueShapeIgnoresDatesAndTimes() {
         XCTAssertEqual(NumiPreprocessor.valueShape("Thu Jun 4"), .other,
                        "date strings must not enter the unit census")
