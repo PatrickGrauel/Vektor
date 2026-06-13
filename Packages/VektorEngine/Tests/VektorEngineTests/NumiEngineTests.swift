@@ -2092,6 +2092,81 @@ final class NumiEngineTests: XCTestCase {
                        "only a pure `name = sum` assigns a total")
     }
 
+    // MARK: - Extended bare-form aggregates (median / min / max / range / …)
+
+    private func aggResult(_ keyword: String) throws -> String? {
+        let engine = try NumiEngine()
+        return engine.evaluate("""
+        10
+        20
+        30
+        \(keyword)
+        """)[3].value
+    }
+
+    func testMedianMinMaxRangeCount() throws {
+        XCTAssertEqual(try aggResult("median"), "20")
+        XCTAssertEqual(try aggResult("min"), "10")
+        XCTAssertEqual(try aggResult("max"), "30")
+        XCTAssertEqual(try aggResult("range"), "20", "range = max - min")
+        XCTAssertEqual(try aggResult("count"), "3", "count = number of values")
+    }
+
+    func testMedianEvenCount() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        10
+        20
+        30
+        40
+        median
+        """)
+        XCTAssertEqual(r[4].value, "25", "median of an even set averages the middle pair")
+    }
+
+    func testStdAndVarianceAreSampleNormalized() throws {
+        // 10/20/30: sample variance = 200/(3-1) = 100, std = 10.
+        XCTAssertEqual(try aggResult("std"), "10")
+        XCTAssertEqual(try aggResult("stddev"), "10", "stddev is an alias for std")
+        XCTAssertEqual(try aggResult("variance"), "100")
+    }
+
+    func testProduct() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        2
+        3
+        4
+        product
+        """)
+        XCTAssertEqual(r[3].value, "24")
+    }
+
+    func testExtendedAggregatesAreUnitAware() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        10 kg
+        20 kg
+        30 kg
+        max
+        """)
+        XCTAssertEqual(r[3].value, "30 kg", "max must carry the unit; got: \(r[3].value ?? "<nil>")")
+    }
+
+    func testNamedExtendedAggregate() throws {
+        // The named-total feature composes with the new keywords.
+        let engine = try NumiEngine()
+        let r = engine.evaluate("""
+        100
+        200
+        300
+        typical = median
+        spread = max
+        """)
+        XCTAssertEqual(r[3].value, "200", "typical = median")
+        XCTAssertEqual(r[4].value, "300", "named aggregates excluded from each other's window")
+    }
+
     func testValueShapeIgnoresDatesAndTimes() {
         XCTAssertEqual(NumiPreprocessor.valueShape("Thu Jun 4"), .other,
                        "date strings must not enter the unit census")

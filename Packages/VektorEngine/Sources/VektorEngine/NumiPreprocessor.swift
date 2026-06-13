@@ -901,7 +901,7 @@ struct NumiPreprocessor {
         )
     }
 
-    // MARK: - Aggregates: `sum` / `total` / `average` / `avg`
+    // MARK: - Aggregates: sum / mean / median / min / max / range / count / …
     //
     // Handles these shapes:
     //
@@ -931,9 +931,17 @@ struct NumiPreprocessor {
     /// The name must be a bare mathjs identifier so `sum = 5` (assigning a
     /// literal *to* a var called sum) doesn't match — only `<name> = sum`
     /// (an aggregate on the right) does.
+    ///
+    /// Kinds (group 2) — the full bare-form vocabulary, unit- and
+    /// expression-aware (unlike the literal-only `<op> of:` handler):
+    ///   sum / total · average / avg / mean · median · min[imum] ·
+    ///   max[imum] · range (max−min) · count · std / stddev / stdev ·
+    ///   variance · product / prod
+    /// Longer alternatives precede their prefixes (minimum|min) so the
+    /// match doesn't stop short.
     private static let aggregateRegex: NSRegularExpression? =
         try? NSRegularExpression(
-            pattern: #"^(?:([A-Za-z_][A-Za-z0-9_]*)\s*=\s*)?(sum|total|average|avg)(?:\s+(?:to|in|as)\s+(\S+))?$"#,
+            pattern: #"^(?:([A-Za-z_][A-Za-z0-9_]*)\s*=\s*)?(sum|total|average|avg|mean|median|minimum|min|maximum|max|range|count|stddev|stdev|std|variance|product|prod)(?:\s+(?:to|in|as)\s+(\S+))?$"#,
             options: [.caseInsensitive])
 
     /// True when `line` is a bare aggregate keyword line. Used by the engine
@@ -982,8 +990,25 @@ struct NumiPreprocessor {
         let joined = values
             .map { "(\(Self.stripThousandsSpaces($0)))" }
             .joined(separator: ",")
-        let funcName = (kind == "average" || kind == "avg") ? "mean" : "sum"
-        let base = "\(funcName)(\(joined))"
+
+        // `count` is a unitless tally — short-circuit before unit handling
+        // (a `to <unit>` target is meaningless for "how many").
+        if kind == "count" { return assigned("\(values.count)") }
+
+        // Map the keyword to its mathjs base call. `range` has no single
+        // function, so synthesise max−min; everything else is a direct call.
+        let base: String
+        switch kind {
+        case "average", "avg", "mean":  base = "mean(\(joined))"
+        case "median":                  base = "median(\(joined))"
+        case "min", "minimum":          base = "min(\(joined))"
+        case "max", "maximum":          base = "max(\(joined))"
+        case "range":                   base = "(max(\(joined)) - min(\(joined)))"
+        case "std", "stddev", "stdev":  base = "std(\(joined))"
+        case "variance":                base = "variance(\(joined))"
+        case "product", "prod":         base = "prod(\(joined))"
+        default:                        base = "sum(\(joined))"   // sum, total
+        }
 
         // Prefer the user's explicit "in/to/as <unit>"; otherwise default
         // to the last value's trailing unit so currencies and lengths
