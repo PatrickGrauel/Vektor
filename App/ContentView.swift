@@ -109,9 +109,10 @@ final class AppModel: ObservableObject {
     /// Codes outside this set came from the er-api gap-fill; equal to
     /// `fxCurrencyCodes` for single-feed sources (OXR).
     @Published var fxPrimaryCurrencyCodes: Set<String> = []
-    /// Short label for the gap-fill feed ("er-api"), empty for
-    /// single-feed sources — the provenance tag appends it only when a
-    /// calculation actually touched a gap-filled code.
+    /// User-facing name of the gap-fill feed ("ExchangeRate-API" — the
+    /// service behind open.er-api.com), empty for single-feed sources —
+    /// the provenance tag appends it only when a calculation actually
+    /// touched a gap-filled code.
     @Published var fxSecondarySourceLabel: String = ""
     /// Symbols priced by the crypto feed (CoinGecko) — crypto legs of a
     /// conversion are not ECB-priced and the provenance tag says so.
@@ -211,9 +212,9 @@ final class AppModel: ObservableObject {
             fxSecondarySourceLabel = ""
             source = .openExchangeRates(appId: oxrKey)
         } else {
-            fxSourceLabel = "ECB + er-api"
+            fxSourceLabel = "ECB + ExchangeRate-API"
             fxShortSourceLabel = "ECB"
-            fxSecondarySourceLabel = "er-api"
+            fxSecondarySourceLabel = "ExchangeRate-API"
             source = .ecbWithERApiFallback
         }
         fxSource = source

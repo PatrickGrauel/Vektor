@@ -58,7 +58,7 @@ struct SettingsView: View {
                         }
                     }
                 Toggle("Show currency rate source", isOn: $showFXProvenance)
-                Text("Tags currency results with their rate source — e.g. \u{201C}Source: ECB\u{201D}. ECB publishes one official reference rate per business day, so results can differ slightly from live tickers.")
+                Text("Tags currency results with their rate source — e.g. \u{201C}ECB\u{201D}. ECB publishes one official reference rate per business day, so results can differ slightly from live tickers. Currencies the ECB doesn't publish (e.g. RUB) come from ExchangeRate-API, crypto prices from CoinGecko.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Always on top", isOn: $alwaysOnTop)
                 Toggle("Menu Bar Only Mode", isOn: $menuBarOnly)

@@ -338,10 +338,17 @@ struct CalculatorPane: View {
         return found
     }
 
+    /// Zero-width prefix marking an annotation as the FX provenance tag,
+    /// so `renderAnnotation` can style it smaller than the METAR
+    /// freshness chips without a visible prefix. Same trick as the
+    /// briefing freshness sentinels (U+200B/C/D on value lines).
+    static let provenanceSentinel = "\u{2060}"
+
     /// Name the feeds that actually priced this run, not the configured
-    /// family: "Source: ECB" for pure-majors runs, "· er-api" appended
+    /// family: "ECB" for pure-majors runs, "· ExchangeRate-API" appended
     /// when a gap-filled code (RUB, AED, …) is involved, "· CoinGecko"
-    /// for crypto legs.
+    /// for crypto legs. No "Source:" prefix — a tiny grey feed name
+    /// under a rate column is self-explanatory.
     private func sourceTag(for codes: Set<String>) -> String {
         var parts: [String] = []
         let fiat = codes.intersection(model.fxCurrencyCodes)
@@ -356,7 +363,7 @@ struct CalculatorPane: View {
             parts.append("CoinGecko")
         }
         if parts.isEmpty { parts = [model.fxShortSourceLabel] }
-        return "Source: " + parts.joined(separator: " · ")
+        return Self.provenanceSentinel + parts.joined(separator: " · ")
     }
 
     // MARK: - Render (LineResult → NSAttributedString)
@@ -512,13 +519,15 @@ struct CalculatorPane: View {
     /// line beneath the main value. Returns nil when nothing to show.
     static func renderAnnotation(_ r: LineResult) -> NSAttributedString? {
         guard let a = r.annotation else { return nil }
-        let attr = NSMutableAttributedString(string: a.label)
+        // The FX provenance tag ("ECB", produced by attachFXProvenance in
+        // this file, marked by a zero-width sentinel) sits a step below
+        // even the freshness chips — it's ambient context, not a warning,
+        // so it gets the smallest legible size while METAR/TAF ages keep
+        // 10.5.
+        let isProvenance = a.label.hasPrefix(provenanceSentinel)
+        let label = isProvenance ? String(a.label.dropFirst(provenanceSentinel.count)) : a.label
+        let attr = NSMutableAttributedString(string: label)
         let range = NSRange(location: 0, length: attr.length)
-        // The FX provenance tag ("Source: ECB", produced by
-        // attachFXProvenance in this file) sits a step below even the
-        // freshness chips — it's ambient context, not a warning, so it
-        // gets the smallest legible size while METAR/TAF ages keep 10.5.
-        let isProvenance = a.label.hasPrefix("Source: ")
         attr.addAttribute(.font,
                           value: NSFont.monospacedSystemFont(ofSize: isProvenance ? 9 : 10.5,
                                                              weight: .regular),
