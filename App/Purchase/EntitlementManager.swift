@@ -50,7 +50,8 @@ final class EntitlementManager: ObservableObject {
     var trialEndsAt: Date { trialStart.addingTimeInterval(Double(Self.trialDays) * 86_400) }
     var isTrialActive: Bool { Date() < trialEndsAt }
     /// The gate: the app is usable if it's been bought OR the trial is live.
-    var isUnlocked: Bool { isPurchased || isTrialActive }
+    /// Paywall disabled — always unlocked. (Original: `isPurchased || isTrialActive`.)
+    var isUnlocked: Bool { true }
 
     var statusText: String {
         if isPurchased { return "Purchased — thank you!" }
