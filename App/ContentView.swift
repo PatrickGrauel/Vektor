@@ -105,6 +105,17 @@ final class AppModel: ObservableObject {
     /// calculator pane recognise which result lines are FX-converted
     /// (and so deserve the provenance tag) without asking the engine.
     @Published var fxCurrencyCodes: Set<String> = []
+    /// Subset of `fxCurrencyCodes` priced by the primary feed (ECB).
+    /// Codes outside this set came from the er-api gap-fill; equal to
+    /// `fxCurrencyCodes` for single-feed sources (OXR).
+    @Published var fxPrimaryCurrencyCodes: Set<String> = []
+    /// Short label for the gap-fill feed ("er-api"), empty for
+    /// single-feed sources — the provenance tag appends it only when a
+    /// calculation actually touched a gap-filled code.
+    @Published var fxSecondarySourceLabel: String = ""
+    /// Symbols priced by the crypto feed (CoinGecko) — crypto legs of a
+    /// conversion are not ECB-priced and the provenance tag says so.
+    @Published var cryptoCodes: Set<String> = []
     @Published var fxIsOffline: Bool = false
 
     private static let logger = Logger(subsystem: "app.vektor.Vektor", category: "app-model")
@@ -197,10 +208,12 @@ final class AppModel: ObservableObject {
         if !oxrKey.isEmpty {
             fxSourceLabel = "OpenExchangeRates"
             fxShortSourceLabel = "OXR"
+            fxSecondarySourceLabel = ""
             source = .openExchangeRates(appId: oxrKey)
         } else {
             fxSourceLabel = "ECB + er-api"
             fxShortSourceLabel = "ECB"
+            fxSecondarySourceLabel = "er-api"
             source = .ecbWithERApiFallback
         }
         fxSource = source
@@ -220,6 +233,7 @@ final class AppModel: ObservableObject {
                     self.fxSnapshotDate = snap.timestamp
                     self.fxCurrencyCount = snap.ratesPerUSD.count
                     self.fxCurrencyCodes = Set(snap.ratesPerUSD.keys.map { $0.uppercased() })
+                    self.fxPrimaryCurrencyCodes = snap.primaryCodes ?? self.fxCurrencyCodes
                     self.fxIsOffline = false
                     Self.logger.info("FX stream → engine: \(snap.ratesPerUSD.count) rates, ts=\(snap.timestamp)")
                 }
@@ -235,6 +249,7 @@ final class AppModel: ObservableObject {
                 if Task.isCancelled { return }
                 await MainActor.run {
                     self.engine?.applyCrypto(snap)
+                    self.cryptoCodes = Set(snap.pricesUSD.keys.map { $0.uppercased() })
                     Self.logger.info("crypto stream → engine: \(snap.pricesUSD.count) symbols, ts=\(snap.timestamp)")
                 }
             }

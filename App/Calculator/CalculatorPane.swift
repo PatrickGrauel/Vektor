@@ -282,23 +282,26 @@ struct CalculatorPane: View {
               model.fxSnapshotDate != nil,
               !model.fxShortSourceLabel.isEmpty,
               !model.fxCurrencyCodes.isEmpty else { return results }
-        let tag = "Source: \(model.fxShortSourceLabel)"
         var out = results
         var lastCurrencyIndex: Int?
+        var runCodes = Set<String>()
         func closeRun() {
             // Never clobber an engine-supplied annotation (METAR freshness
             // etc.) — currency lines don't carry one today, but stay safe.
             if let i = lastCurrencyIndex, out[i].annotation == nil {
                 out[i] = LineResult(line: out[i].line, raw: out[i].raw,
                                     value: out[i].value, kind: out[i].kind,
-                                    annotation: .init(label: tag, tone: .fresh),
+                                    annotation: .init(label: sourceTag(for: runCodes),
+                                                      tone: .fresh),
                                     hint: out[i].hint)
             }
             lastCurrencyIndex = nil
+            runCodes.removeAll()
         }
         for (i, r) in results.enumerated() {
-            if isFXCurrencyResult(r) {
+            if isCurrencyResult(r) {
                 lastCurrencyIndex = i
+                runCodes.formUnion(currencyCodes(in: r))
             } else {
                 closeRun()
             }
@@ -307,13 +310,53 @@ struct CalculatorPane: View {
         return out
     }
 
-    /// A line whose result carries a currency code priced by the current
-    /// FX snapshot ("20 669.33 IDR" → IDR). Recognises the fiat leg of
-    /// crypto conversions too (`1 BTC in eur` results in EUR).
-    private func isFXCurrencyResult(_ r: LineResult) -> Bool {
+    /// A line whose result carries a code priced by the FX snapshot
+    /// ("20 669.33 IDR" → IDR) or by the crypto feed ("1.5 BTC").
+    private func isCurrencyResult(_ r: LineResult) -> Bool {
         guard r.kind == .expression, let value = r.value,
               let lastToken = value.split(separator: " ").last else { return false }
-        return model.fxCurrencyCodes.contains(lastToken.uppercased())
+        let code = lastToken.uppercased()
+        return model.fxCurrencyCodes.contains(code) || model.cryptoCodes.contains(code)
+    }
+
+    /// Every priced code a line touches — INPUT side included, because
+    /// `100 RUB in usd` results in USD (an ECB code) while the rate that
+    /// did the work is er-api's RUB. Tokens are matched case-insensitively
+    /// against the known code sets; an English word that collides with an
+    /// exotic code ("all" → Albanian lek) can over-attribute a tag, which
+    /// costs an unnecessary "· er-api" suffix, never a wrong number.
+    private func currencyCodes(in r: LineResult) -> Set<String> {
+        var found = Set<String>()
+        for text in [r.raw, r.value ?? ""] {
+            for token in text.split(whereSeparator: { !$0.isLetter }) {
+                let code = token.uppercased()
+                if model.fxCurrencyCodes.contains(code) || model.cryptoCodes.contains(code) {
+                    found.insert(code)
+                }
+            }
+        }
+        return found
+    }
+
+    /// Name the feeds that actually priced this run, not the configured
+    /// family: "Source: ECB" for pure-majors runs, "· er-api" appended
+    /// when a gap-filled code (RUB, AED, …) is involved, "· CoinGecko"
+    /// for crypto legs.
+    private func sourceTag(for codes: Set<String>) -> String {
+        var parts: [String] = []
+        let fiat = codes.intersection(model.fxCurrencyCodes)
+        if fiat.contains(where: { model.fxPrimaryCurrencyCodes.contains($0) }) {
+            parts.append(model.fxShortSourceLabel)
+        }
+        if !model.fxSecondarySourceLabel.isEmpty,
+           fiat.contains(where: { !model.fxPrimaryCurrencyCodes.contains($0) }) {
+            parts.append(model.fxSecondarySourceLabel)
+        }
+        if codes.contains(where: { model.cryptoCodes.contains($0) }) {
+            parts.append("CoinGecko")
+        }
+        if parts.isEmpty { parts = [model.fxShortSourceLabel] }
+        return "Source: " + parts.joined(separator: " · ")
     }
 
     // MARK: - Render (LineResult → NSAttributedString)

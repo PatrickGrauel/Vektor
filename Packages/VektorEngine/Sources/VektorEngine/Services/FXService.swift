@@ -34,13 +34,21 @@ public actor FXService {
         /// every snapshot look permanently stale and the polling loop
         /// re-fetches every 60 s all day.
         public let fetchedAt: Date
+        /// Codes priced by the PRIMARY feed of a merged source (the ECB
+        /// side of `.ecbWithERApiFallback`) — everything else in
+        /// `ratesPerUSD` came from the gap-fill feed. `nil` for
+        /// single-feed sources (OXR, plain Frankfurter): every code is
+        /// primary. Lets the UI attribute a conversion to the feed that
+        /// actually priced it instead of blaming ECB for er-api's RUB.
+        public let primaryCodes: Set<String>?
 
         init(base: String, ratesPerUSD: [String: Double], timestamp: Date,
-             fetchedAt: Date = Date()) {
+             fetchedAt: Date = Date(), primaryCodes: Set<String>? = nil) {
             self.base = base
             self.ratesPerUSD = ratesPerUSD
             self.timestamp = timestamp
             self.fetchedAt = fetchedAt
+            self.primaryCodes = primaryCodes
         }
 
         public init(from decoder: Decoder) throws {
@@ -51,6 +59,7 @@ public actor FXService {
             // Caches written before `fetchedAt` existed: treat the rate
             // date as the fetch date — worst case is one extra refresh.
             fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? timestamp
+            primaryCodes = try c.decodeIfPresent(Set<String>.self, forKey: .primaryCodes)
         }
     }
 
@@ -406,11 +415,13 @@ public actor FXService {
             return try await fetchFrankfurter()
         }
 
-        let merged = Self.mergeRates(primary: ecb?.ratesPerUSD ?? [:],
+        let ecbRates = ecb?.ratesPerUSD ?? [:]
+        let merged = Self.mergeRates(primary: ecbRates,
                                      fallback: er?.ratesPerUSD ?? [:])
         // Prefer ECB's timestamp (authoritative cadence) when present.
         let stamp = ecb?.timestamp ?? er?.timestamp ?? Date()
-        return Snapshot(base: "USD", ratesPerUSD: merged, timestamp: stamp)
+        return Snapshot(base: "USD", ratesPerUSD: merged, timestamp: stamp,
+                        primaryCodes: Set(ecbRates.keys.map { $0.uppercased() }))
     }
 
     /// Union of two USD-based rate tables; `primary` wins on any overlapping
