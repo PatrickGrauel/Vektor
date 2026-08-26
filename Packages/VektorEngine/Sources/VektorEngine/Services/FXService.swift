@@ -24,15 +24,46 @@ public actor FXService {
         public let base: String
         /// Per-USD rates: how many UNIT equal 1 USD.
         public let ratesPerUSD: [String: Double]
+        /// The as-of date of the rates themselves — ECB publication day
+        /// (noon UTC) for Frankfurter, the provider's tick for OXR/er-api.
+        /// This is what the UI shows as provenance.
         public let timestamp: Date
+        /// When WE last fetched this snapshot. Drives the refresh cadence,
+        /// and must stay distinct from `timestamp`: daily sources (ECB)
+        /// are always hours old, so keying staleness off `timestamp` makes
+        /// every snapshot look permanently stale and the polling loop
+        /// re-fetches every 60 s all day.
+        public let fetchedAt: Date
+
+        init(base: String, ratesPerUSD: [String: Double], timestamp: Date,
+             fetchedAt: Date = Date()) {
+            self.base = base
+            self.ratesPerUSD = ratesPerUSD
+            self.timestamp = timestamp
+            self.fetchedAt = fetchedAt
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            base = try c.decode(String.self, forKey: .base)
+            ratesPerUSD = try c.decode([String: Double].self, forKey: .ratesPerUSD)
+            timestamp = try c.decode(Date.self, forKey: .timestamp)
+            // Caches written before `fetchedAt` existed: treat the rate
+            // date as the fetch date — worst case is one extra refresh.
+            fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt) ?? timestamp
+        }
     }
 
     public enum Source: Sendable {
         case openExchangeRates(appId: String)
         /// Frankfurter — free ECB-based rates, no API key. Covers ~30 majors
-        /// (EUR, USD, GBP, HUF, CZK, PLN, …) and is used as the default
-        /// fallback when no OXR key is configured.
+        /// (EUR, USD, GBP, HUF, CZK, PLN, …).
         case frankfurter
+        /// ECB (Frankfurter) for its ~30 authoritative majors, with the gaps
+        /// filled from open.er-api.com (free, no key, ~160 currencies incl.
+        /// RUB — which the ECB stopped publishing in 2022). ECB wins on any
+        /// overlap; er-api only supplies codes ECB omits. The no-key default.
+        case ecbWithERApiFallback
     }
 
     private static let logger = Logger(subsystem: "app.vektor.Vektor", category: "fx")
@@ -74,6 +105,14 @@ public actor FXService {
             let cfg = URLSessionConfiguration.default
             cfg.timeoutIntervalForRequest = Self.requestTimeout
             cfg.timeoutIntervalForResource = Self.requestTimeout * 2
+            // Bypass the HTTP-layer cache entirely. Frankfurter serves
+            // `latest` with `cache-control: max-age=86400`, so the default
+            // URLCache happily replays YESTERDAY's rates for up to a day
+            // while we believe we just fetched fresh ones. We keep our own
+            // disk snapshot with explicit staleness — the URL cache only
+            // undermines it.
+            cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+            cfg.urlCache = nil
             self.session = URLSession(configuration: cfg)
         }
     }
@@ -86,19 +125,43 @@ public actor FXService {
 
     public func snapshot(using source: Source) async -> Snapshot? {
         if let s = inMemory {
-            if Date().timeIntervalSince(s.timestamp) > Self.staleAfter {
+            if isStale(s) {
                 Task { _ = try? await self.refresh(using: source) }
             }
             return s
         }
         if let disk = loadFromDisk() {
             inMemory = disk
-            if Date().timeIntervalSince(disk.timestamp) > Self.staleAfter {
+            if isStale(disk) {
                 Task { _ = try? await self.refresh(using: source) }
             }
             return disk
         }
         return try? await refreshWithRetry(using: source)
+    }
+
+    private func isStale(_ snapshot: Snapshot) -> Bool {
+        Date().timeIntervalSince(snapshot.fetchedAt) > Self.staleAfter
+    }
+
+    /// Refresh only when the current snapshot is missing or past the
+    /// staleness window. The app calls this on scene activation so a Mac
+    /// waking from overnight sleep doesn't keep showing yesterday's rates
+    /// until the next polling tick. A successful fetch broadcasts to all
+    /// active `snapshots(using:)` consumers.
+    @discardableResult
+    public func refreshIfStale(using source: Source) async throws -> Snapshot? {
+        let current: Snapshot?
+        if let s = inMemory {
+            current = s
+        } else if let disk = loadFromDisk() {
+            inMemory = disk
+            current = disk
+        } else {
+            current = nil
+        }
+        if let current, !isStale(current) { return nil }
+        return try await refreshWithRetry(using: source)
     }
 
     // MARK: - Stream API
@@ -123,13 +186,26 @@ public actor FXService {
         continuations[id] = continuation
         // Push the current snapshot ASAP — cached if we have it, otherwise
         // the result of a synchronous (first-launch) fetch.
+        var cached: Snapshot?
         if let s = inMemory {
-            continuation.yield(s)
+            cached = s
         } else if let disk = loadFromDisk() {
             inMemory = disk
-            continuation.yield(disk)
-        } else if let fresh = try? await refreshWithRetry(using: source) {
-            continuation.yield(fresh)
+            cached = disk
+        }
+        if let cached {
+            continuation.yield(cached)
+            // Stale cache (e.g. app launched after a night's sleep): don't
+            // sit on it until the polling tick ≥60 s out — refresh now.
+            // Success broadcasts to every consumer, including this one.
+            if isStale(cached) {
+                Task { _ = try? await self.refreshWithRetry(using: source) }
+            }
+        } else {
+            // No cache at all: fetch before returning so the first yield is
+            // real data. refreshWithRetry broadcasts on success, and this
+            // continuation is already registered, so no explicit yield.
+            _ = try? await refreshWithRetry(using: source)
         }
         // Ensure a polling task is running for this source.
         startPolling(source: source, key: key)
@@ -154,7 +230,7 @@ public actor FXService {
                 let interval: TimeInterval = await {
                     guard let self else { return 60 }
                     if let s = await self.inMemorySnapshot() {
-                        let age = Date().timeIntervalSince(s.timestamp)
+                        let age = Date().timeIntervalSince(s.fetchedAt)
                         return max(60, Self.staleAfter - age)
                     }
                     return 60
@@ -162,9 +238,8 @@ public actor FXService {
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 if Task.isCancelled { return }
                 guard let self else { return }
-                if let fresh = try? await self.refreshWithRetry(using: source) {
-                    await self.broadcast(fresh)
-                }
+                // refreshWithRetry broadcasts on success.
+                _ = try? await self.refreshWithRetry(using: source)
             }
         }
     }
@@ -194,6 +269,11 @@ public actor FXService {
                 let snapshot = try await fetchOnce(using: source)
                 inMemory = snapshot
                 saveToDisk(snapshot)
+                // Single broadcast point: every successful refresh —
+                // polling tick, foreground kick, or explicit refresh() —
+                // reaches all stream consumers, so the engine can never
+                // stay behind a cache that did update.
+                broadcast(snapshot)
                 if attempt > 0 {
                     Self.logger.info("FX fetched on retry \(attempt): base=\(snapshot.base), \(snapshot.ratesPerUSD.count) rates, ts=\(snapshot.timestamp)")
                 } else {
@@ -221,6 +301,7 @@ public actor FXService {
         switch source {
         case .openExchangeRates(let appId): return try await fetchOXR(appId: appId)
         case .frankfurter:                  return try await fetchFrankfurter()
+        case .ecbWithERApiFallback:         return try await fetchECBWithFallback()
         }
     }
 
@@ -286,6 +367,61 @@ public actor FXService {
         return Snapshot(base: "USD", ratesPerUSD: rates, timestamp: stamp)
     }
 
+    /// open.er-api.com — free, no API key, ~160 currencies, USD-based,
+    /// refreshed ~daily. Used to fill currencies the ECB feed omits (RUB,
+    /// AED, and the long tail). Signals logical failure in-band with a 200
+    /// body whose `result` is not `"success"`, so we check that explicitly.
+    private func fetchERApi() async throws -> Snapshot {
+        guard let url = URL(string: "https://open.er-api.com/v6/latest/USD") else {
+            throw URLError(.badURL)
+        }
+        let (data, response) = try await session.data(from: url)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw HTTPError(status: http.statusCode)
+        }
+        struct ERApi: Decodable {
+            let result: String
+            let time_last_update_unix: TimeInterval?
+            let rates: [String: Double]
+        }
+        let decoded = try JSONDecoder().decode(ERApi.self, from: data)
+        guard decoded.result == "success" else { throw HTTPError(status: 502) }
+        let stamp = decoded.time_last_update_unix.map { Date(timeIntervalSince1970: $0) } ?? Date()
+        return Snapshot(base: "USD", ratesPerUSD: decoded.rates, timestamp: stamp)
+    }
+
+    /// ECB-primary, er-api-fallback merge. Both feeds run concurrently and
+    /// are USD-based, so combining is a plain key union with ECB winning on
+    /// overlap. Resilient: if only one feed fails we still return the other;
+    /// only when BOTH fail do we surface an error so retry/backoff applies.
+    private func fetchECBWithFallback() async throws -> Snapshot {
+        async let ecbThrows = fetchFrankfurter()
+        async let erThrows  = fetchERApi()
+        let ecb = try? await ecbThrows
+        let er  = try? await erThrows
+
+        guard ecb != nil || er != nil else {
+            // Both failed — re-run the primary so its real (typed) error
+            // propagates into refreshWithRetry's transient classification.
+            return try await fetchFrankfurter()
+        }
+
+        let merged = Self.mergeRates(primary: ecb?.ratesPerUSD ?? [:],
+                                     fallback: er?.ratesPerUSD ?? [:])
+        // Prefer ECB's timestamp (authoritative cadence) when present.
+        let stamp = ecb?.timestamp ?? er?.timestamp ?? Date()
+        return Snapshot(base: "USD", ratesPerUSD: merged, timestamp: stamp)
+    }
+
+    /// Union of two USD-based rate tables; `primary` wins on any overlapping
+    /// code, `fallback` fills the rest. Pure — unit-tested directly.
+    static func mergeRates(primary: [String: Double],
+                           fallback: [String: Double]) -> [String: Double] {
+        var merged = fallback
+        for (code, rate) in primary { merged[code] = rate }
+        return merged
+    }
+
     // MARK: - Disk cache
 
     private func loadFromDisk() -> Snapshot? {
@@ -313,8 +449,9 @@ public actor FXService {
 
     private func sourceKey(_ source: Source) -> String {
         switch source {
-        case .openExchangeRates: return "oxr"
-        case .frankfurter:       return "frankfurter"
+        case .openExchangeRates:    return "oxr"
+        case .frankfurter:          return "frankfurter"
+        case .ecbWithERApiFallback: return "ecb+er"
         }
     }
 }

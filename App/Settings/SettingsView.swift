@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("vektor.precision")  private var precision: Int = 2
     @AppStorage("vektor.appearance") private var appearance: String = "system"
     @AppStorage("vektor.menuBarOnly") private var menuBarOnly: Bool = false
+    @AppStorage("vektor.fx.showProvenance") private var showFXProvenance: Bool = true
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @AppStorage("vektor.alwaysOnTop") private var alwaysOnTop: Bool = false
     @State private var showDocs: Bool = false
@@ -56,6 +57,9 @@ struct SettingsView: View {
                             launchAtLogin = LaunchAtLogin.isEnabled
                         }
                     }
+                Toggle("Show currency rate source", isOn: $showFXProvenance)
+                Text("Tags currency results with their rate source — e.g. \u{201C}Source: ECB\u{201D}. ECB publishes one official reference rate per business day, so results can differ slightly from live tickers.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Always on top", isOn: $alwaysOnTop)
                 Toggle("Menu Bar Only Mode", isOn: $menuBarOnly)
                     .onChange(of: menuBarOnly) { _, _ in

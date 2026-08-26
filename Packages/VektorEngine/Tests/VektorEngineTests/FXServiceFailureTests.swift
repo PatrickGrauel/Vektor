@@ -86,6 +86,80 @@ final class FXServiceFailureTests: XCTestCase {
         XCTAssertEqual(snap?.ratesPerUSD["EUR"], 0.85)
     }
 
+    /// ECB-primary merge: the authoritative feed wins on overlap, the
+    /// fallback fills the gaps (the RUB-on-ECB case that started this).
+    func test_mergeRates_primaryWinsAndFallbackFillsGaps() {
+        let ecb: [String: Double] = ["EUR": 0.85, "GBP": 0.74]                 // authoritative majors
+        let er:  [String: Double] = ["EUR": 0.88, "RUB": 76.0, "AED": 3.67]    // broad, incl. RUB
+        let merged = FXService.mergeRates(primary: ecb, fallback: er)
+        XCTAssertEqual(merged["EUR"], 0.85)   // ECB wins on overlap
+        XCTAssertEqual(merged["GBP"], 0.74)   // ECB-only code preserved
+        XCTAssertEqual(merged["RUB"], 76.0)   // gap filled from er-api
+        XCTAssertEqual(merged["AED"], 3.67)
+        XCTAssertEqual(merged.count, 4)
+    }
+
+    // MARK: - Freshness (fetchedAt) semantics
+
+    /// Disk caches written before `fetchedAt` existed must still decode;
+    /// the fetch date falls back to the rate timestamp, so an old cache
+    /// reads as stale and gets refreshed instead of crashing the decoder.
+    func test_legacyCacheWithoutFetchedAt_decodes() throws {
+        let json = #"{"base":"USD","ratesPerUSD":{"EUR":0.9},"timestamp":700000000}"#
+        let snap = try JSONDecoder().decode(FXService.Snapshot.self, from: Data(json.utf8))
+        XCTAssertEqual(snap.fetchedAt, snap.timestamp)
+    }
+
+    /// Rates dated days ago (ECB over a weekend) but FETCHED minutes ago
+    /// are fresh — `refreshIfStale` must not touch the network. The same
+    /// rates last fetched hours ago are stale — one fetch.
+    func test_refreshIfStale_skipsWhenFresh_fetchesWhenStale() async throws {
+        let freshCache = tempCacheURL()
+        let fresh = FXService.Snapshot(base: "USD", ratesPerUSD: ["EUR": 0.9],
+                                       timestamp: Date().addingTimeInterval(-3 * 86400),
+                                       fetchedAt: Date())
+        try JSONEncoder().encode(fresh).write(to: freshCache)
+        let freshSvc = FXService(cacheURL: freshCache, session: URLProtocolStub.makeSession())
+        let skipped = try await freshSvc.refreshIfStale(using: .frankfurter)
+        XCTAssertNil(skipped)
+        XCTAssertEqual(URLProtocolStub.requests.count, 0)
+
+        let staleCache = tempCacheURL()
+        let stale = FXService.Snapshot(base: "USD", ratesPerUSD: ["EUR": 0.9],
+                                       timestamp: Date().addingTimeInterval(-3 * 86400),
+                                       fetchedAt: Date().addingTimeInterval(-2 * 3600))
+        try JSONEncoder().encode(stale).write(to: staleCache)
+        let okBody = try JSONEncoder().encode(FrankfurterResponse.fixture)
+        URLProtocolStub.responses = [.init(statusCode: 200, body: okBody)]
+        let staleSvc = FXService(cacheURL: staleCache, session: URLProtocolStub.makeSession())
+        let refreshed = try await staleSvc.refreshIfStale(using: .frankfurter)
+        XCTAssertEqual(refreshed?.ratesPerUSD["EUR"], 0.85)
+        XCTAssertEqual(URLProtocolStub.requests.count, 1)
+    }
+
+    /// Attaching a stream over a STALE disk cache must yield the cached
+    /// snapshot immediately AND kick a refresh whose result arrives as a
+    /// second yield — not sit on stale rates until the polling tick ≥60 s
+    /// out (the "yesterday's IDR rate in the screenshot" bug).
+    func test_stream_staleCache_yieldsCachedThenFresh() async throws {
+        let cacheURL = tempCacheURL()
+        let stale = FXService.Snapshot(base: "USD", ratesPerUSD: ["EUR": 0.5],
+                                       timestamp: Date().addingTimeInterval(-86400),
+                                       fetchedAt: Date().addingTimeInterval(-86400))
+        try JSONEncoder().encode(stale).write(to: cacheURL)
+        let okBody = try JSONEncoder().encode(FrankfurterResponse.fixture)
+        URLProtocolStub.responses = [.init(statusCode: 200, body: okBody)]
+        let svc = FXService(cacheURL: cacheURL, session: URLProtocolStub.makeSession())
+
+        var yields: [FXService.Snapshot] = []
+        for await snap in await svc.snapshots(using: .frankfurter) {
+            yields.append(snap)
+            if yields.count == 2 { break }
+        }
+        XCTAssertEqual(yields[0].ratesPerUSD["EUR"], 0.5)    // cached, instantly
+        XCTAssertEqual(yields[1].ratesPerUSD["EUR"], 0.85)   // fresh, right behind it
+    }
+
     // MARK: - Helpers
 
     private func tempCacheURL() -> URL {

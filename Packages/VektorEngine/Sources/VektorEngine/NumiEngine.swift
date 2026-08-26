@@ -402,9 +402,15 @@ public final class NumiEngine {
                 // • adding/subtracting a unit and a bare number within one
                 //   line (`2 kg + 2`) — "…Scalar … actual: Unit".
                 var hint: String? = nil
+                // A currency conversion with no live rate gets the specific
+                // currency code so the user knows exactly what's missing.
+                if errorRaw.hasPrefix("NoRate:") {
+                    let code = String(errorRaw.dropFirst("NoRate:".count))
+                    hint = "no live FX rate for \(code)"
+                }
                 // An aggregate over a window with bare-among-united values
                 // gets the specific "N lines have no unit" reason.
-                if prep.isAggregate {
+                if hint == nil, prep.isAggregate {
                     hint = NumiPreprocessor.aggregateFailureHint(window: aggregateWindow)
                 }
                 // Otherwise (or when the aggregate's values are all united but
@@ -1738,6 +1744,15 @@ public final class NumiEngine {
     /// shouldn't see them unmodified in the gutter.
     nonisolated public static func humaniseError(_ message: String) -> String {
         let m = message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Currency with no live rate (engine marker from evalLine). Raised
+        // when a conversion touches a currency the active FX source never
+        // priced (e.g. RUB on ECB / Frankfurter) — better an honest "no
+        // rate" than a silently-wrong USD-equivalent number.
+        if m.hasPrefix("NoRate:") {
+            let code = String(m.dropFirst("NoRate:".count))
+            return "No live rate for \(code)."
+        }
 
         // Undefined symbol / unit  → "Unknown unit 'foo'"
         if let r = m.range(of: #"^Undefined symbol (\S+)"#, options: .regularExpression) {

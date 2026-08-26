@@ -145,6 +145,11 @@ globalThis.vektor = {
     if (lower !== upper) {
       try { math.createUnit(lower, `1 ${upper}`, { override: true }); } catch (e) {}
     }
+    // Record that this code now has a REAL rate. Distinguishes a genuine
+    // conversion from a 1:1 placeholder (see ensureCurrency / evalLine).
+    // NB: FXBridge/CryptoBridge invoke this detached (`setCurrency.call(...)`),
+    // so `this` is NOT the vektor object here — reference the global directly.
+    globalThis.vektor.ratedCurrencies.add(upper);
   },
 
   /** USD as base. No other currencies pre-registered — they come in either
@@ -170,6 +175,14 @@ globalThis.vektor = {
     "USDT","USDC"
   ]),
 
+  /** Currency codes that currently carry a REAL live rate (registered via
+   *  setCurrency from FXService / CryptoService). USD is always rated — it's
+   *  the base. Everything else lands here only once a genuine rate arrives,
+   *  letting us tell a real conversion apart from a 1:1 placeholder so we
+   *  never silently mis-convert a currency the active FX source doesn't
+   *  actually price (e.g. RUB on ECB / Frankfurter). */
+  ratedCurrencies: new Set(["USD"]),
+
   /**
    * Register a placeholder currency unit (1:1 with USD) if no rate has been
    * set yet. Called from NumiEngine just before evaluating a line so that
@@ -183,8 +196,26 @@ globalThis.vektor = {
     const upper = String(code).toUpperCase();
     if (!this.knownCurrencyCodes.has(upper)) return;
     if (math.Unit.UNITS[upper]) return;            // real rate already set
-    try { math.createUnit(upper, { definition: "1 USD" }); } catch (e) {}
     const lower = upper.toLowerCase();
+    // Have real rates landed yet? USD is always present; size > 1 means a
+    // live FX/crypto snapshot has populated genuine rates.
+    const ratesLoaded = this.ratedCurrencies.size > 1;
+    if (ratesLoaded) {
+      // Rates ARE loaded but this code isn't among them → the active source
+      // genuinely doesn't price it (e.g. RUB on ECB / Frankfurter). Register
+      // as its OWN base unit (a distinct dimension), NOT pegged 1:1 to USD,
+      // so cross-currency conversion fails loudly ("no live rate") instead
+      // of silently returning a USD-equivalent number. Single-currency math
+      // (`5000 RUB * 2`) still works. setCurrency() overrides this with a
+      // real USD-pegged definition the moment a rate lands.
+      try { math.createUnit(upper); } catch (e) {}
+    } else {
+      // No rates loaded at all (cold / offline launch): fall back to a
+      // 1:1-USD placeholder so the app degrades gracefully — variable math
+      // and rough conversions still produce a number until rates arrive,
+      // rather than erroring on every currency line while offline.
+      try { math.createUnit(upper, { definition: "1 USD" }); } catch (e) {}
+    }
     if (lower !== upper && !math.Unit.UNITS[lower]) {
       try { math.createUnit(lower, { definition: `1 ${upper}` }); } catch (e) {}
     }
@@ -485,7 +516,31 @@ globalThis.vektor = {
    * variable assignments stick across lines (`a = 12; a * b`).
    */
   evalLine(expr) {
-    return math.evaluate(expr, globalThis.vektor.scope);
+    try {
+      return math.evaluate(expr, globalThis.vektor.scope);
+    } catch (e) {
+      // Turn a cryptic unit/dimension failure into a precise reason when it
+      // was caused by a currency we hold no live rate for (an own-dimension
+      // placeholder from ensureCurrency). Only rewrites unit-shaped errors,
+      // so unrelated failures keep their original message.
+      const msg = String((e && e.message) || e);
+      if (/unit|convert|dimension|do not match/i.test(msg)) {
+        const missing = this.unratedCurrencyIn(expr);
+        if (missing) throw new Error("NoRate:" + missing);
+      }
+      throw e;
+    }
+  },
+
+  /** First known currency code in `expr` that has no live rate, or null.
+   *  Used only on the error path to explain a failed conversion. */
+  unratedCurrencyIn(expr) {
+    const codes = String(expr).toUpperCase().match(/\b[A-Z]{3,4}\b/g);
+    if (!codes) return null;
+    for (const c of codes) {
+      if (this.knownCurrencyCodes.has(c) && !this.ratedCurrencies.has(c)) return c;
+    }
+    return null;
   },
 };
 

@@ -1062,6 +1062,33 @@ final class NumiEngineTests: XCTestCase {
                       "expected a result in USD, got: \(r)")
     }
 
+    /// Regression: with rates loaded but the target currency absent (the real
+    /// ECB/Frankfurter case for RUB), conversion must report "no live rate"
+    /// rather than silently returning a USD-equivalent number — the bug where
+    /// `1 EUR to RUB` rendered "1.14 RUB" (i.e. the EUR→USD rate).
+    func testConversionToUnratedCurrencyDoesNotSilentlyMisconvert() throws {
+        let engine = try NumiEngine()
+        // A loaded snapshot that prices EUR but NOT RUB.
+        engine.applyFX(.init(base: "USD", ratesPerUSD: ["EUR": 0.85], timestamp: Date()))
+
+        // Rated → rated still converts.
+        let ok = engine.evaluate("1 EUR to USD").first
+        XCTAssertEqual(ok?.kind, .expression)
+        XCTAssertTrue((ok?.value ?? "").localizedCaseInsensitiveContains("USD"))
+
+        // Rated → UNRATED errors, naming the missing currency.
+        let bad = engine.evaluate("1 EUR to RUB").first
+        XCTAssertEqual(bad?.kind, .error,
+                       "EUR→RUB with no RUB rate must error, not return a number")
+        XCTAssertTrue((bad?.value ?? "").localizedCaseInsensitiveContains("RUB"),
+                      "expected a no-rate message naming RUB, got: \(bad?.value ?? "nil")")
+
+        // Single-currency math in the unrated currency needs no rate — works.
+        let solo = engine.evaluate("1000 RUB * 2").first
+        XCTAssertEqual(solo?.kind, .expression)
+        XCTAssertTrue((solo?.value ?? "").localizedCaseInsensitiveContains("RUB"))
+    }
+
     // MARK: - Altitude / Briefing
     //
     // `altitude EDMA` produces field elevation + PA + DA derived from

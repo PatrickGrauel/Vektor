@@ -193,6 +193,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         elevateForFullscreenOverlay(panel)
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
+        // Summoning the panel is the app's real "coming to foreground"
+        // moment (scenePhase never fires for a non-activating NSPanel):
+        // if FX rates went stale while the panel was hidden — overnight
+        // sleep, a day in another app — kick a refresh now so the user
+        // isn't reading yesterday's rates.
+        AppModel.shared.refreshFXIfStale()
     }
 
     /// Elevate to `.floating` so the panel overlays a full-screen app's

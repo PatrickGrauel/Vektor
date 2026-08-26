@@ -99,6 +99,12 @@ final class AppModel: ObservableObject {
     @Published var fxSnapshotDate: Date?
     @Published var fxCurrencyCount: Int = 0
     @Published var fxSourceLabel: String = "Not configured"
+    /// Compact source tag for result-level provenance ("ECB", "OXR").
+    @Published var fxShortSourceLabel: String = ""
+    /// Currency codes priced by the current FX snapshot — lets the
+    /// calculator pane recognise which result lines are FX-converted
+    /// (and so deserve the provenance tag) without asking the engine.
+    @Published var fxCurrencyCodes: Set<String> = []
     @Published var fxIsOffline: Bool = false
 
     private static let logger = Logger(subsystem: "app.vektor.Vektor", category: "app-model")
@@ -114,6 +120,9 @@ final class AppModel: ObservableObject {
     private static let refreshJobInterval: TimeInterval = 5 * 60
     private var metarRefreshTask: Task<Void, Never>?
     private var fxStreamTask: Task<Void, Never>?
+    /// The FX source resolved at bootstrap — kept so scene-activation can
+    /// kick `refreshIfStale` against the same source the stream uses.
+    private var fxSource: FXService.Source?
     private var cryptoStreamTask: Task<Void, Never>?
     private var reachabilityObserver: NSObjectProtocol?
 
@@ -177,9 +186,9 @@ final class AppModel: ObservableObject {
 
     func bootstrapLiveData() async {
         // Pick an FX source. OpenExchangeRates if the user has a key,
-        // Frankfurter (free ECB rates) otherwise.
-        // Same presence-gate pattern as FMP — Frankfurter (free,
-        // anonymous) is the default FX source, so users who never
+        // otherwise ECB (Frankfurter) for its authoritative majors with the
+        // gaps (RUB, AED, …) filled from open.er-api.com — both free and
+        // key-less. Same presence-gate pattern as FMP: users who never
         // pasted an OXR key get no Keychain access on launch.
         let oxrKey: String = KeychainStorage.hasKey("vektor.fx.openExchangeRatesKey")
             ? (KeychainStorage.get("vektor.fx.openExchangeRatesKey") ?? "")
@@ -187,11 +196,14 @@ final class AppModel: ObservableObject {
         let source: FXService.Source
         if !oxrKey.isEmpty {
             fxSourceLabel = "OpenExchangeRates"
+            fxShortSourceLabel = "OXR"
             source = .openExchangeRates(appId: oxrKey)
         } else {
-            fxSourceLabel = "Frankfurter (ECB)"
-            source = .frankfurter
+            fxSourceLabel = "ECB + er-api"
+            fxShortSourceLabel = "ECB"
+            source = .ecbWithERApiFallback
         }
+        fxSource = source
 
         // Subscribe to the FX stream. The stream yields the cached
         // snapshot first (if any), then yields again after every
@@ -207,6 +219,7 @@ final class AppModel: ObservableObject {
                     self.engine?.applyFX(snap)
                     self.fxSnapshotDate = snap.timestamp
                     self.fxCurrencyCount = snap.ratesPerUSD.count
+                    self.fxCurrencyCodes = Set(snap.ratesPerUSD.keys.map { $0.uppercased() })
                     self.fxIsOffline = false
                     Self.logger.info("FX stream → engine: \(snap.ratesPerUSD.count) rates, ts=\(snap.timestamp)")
                 }
@@ -228,6 +241,18 @@ final class AppModel: ObservableObject {
         }
 
         startMetarRefreshJob()
+    }
+
+    /// Scene-activation hook: when the FX snapshot is past its staleness
+    /// window (Mac waking from overnight sleep, app hidden for hours),
+    /// fetch now instead of waiting for the stream's next polling tick.
+    /// A successful fetch flows through the normal stream → engine path,
+    /// so rates and the provenance label update together.
+    func refreshFXIfStale() {
+        guard let fxSource else { return }
+        Task { [fx] in
+            _ = try? await fx.refreshIfStale(using: fxSource)
+        }
     }
 
     /// Background job that proactively warms METAR/TAF/ATIS for stations
@@ -429,7 +454,14 @@ struct ContentView: View {
             // session on Timezone doesn't expire while the user is
             // still actively using it.
             .onChange(of: scenePhase) { _, phase in
-                if phase != .active { touchSessionTimestamp() }
+                if phase != .active {
+                    touchSessionTimestamp()
+                } else {
+                    // Coming back to the foreground: rates may have gone
+                    // stale while the app slept — check now, don't wait
+                    // for the next polling tick.
+                    model.refreshFXIfStale()
+                }
             }
     }
 

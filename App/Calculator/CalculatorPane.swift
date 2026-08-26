@@ -9,6 +9,7 @@ struct CalculatorPane: View {
     @ObservedObject var documents: DocumentStore
     @Environment(\.openSettings) private var openSettings
     @EnvironmentObject private var calculatorBridge: CalculatorBridge
+    @EnvironmentObject private var model: AppModel
 
     @State private var results: [LineResult] = []
     @State private var evaluateTask: Task<Void, Never>? = nil
@@ -18,6 +19,9 @@ struct CalculatorPane: View {
     /// Persisted so the user's preferred split survives launches; the
     /// drag handle in the gutter divider writes back to this value.
     @AppStorage("vektor.calc.editorWidth") private var editorWidth: Double = 460
+    /// Result-level rate provenance ("(ECB · 26 AUG)" under currency
+    /// results). On by default; Settings → General offers the opt-out.
+    @AppStorage("vektor.fx.showProvenance") private var showFXProvenance: Bool = true
 
     /// Drives a periodic re-evaluation so live data (METAR/TAF freshness
     /// labels, current-time timezone results, FX rates) refreshes on its
@@ -61,6 +65,7 @@ struct CalculatorPane: View {
         .background(VektorTheme.background)
         .onChange(of: documents.selectedID) { _, _ in evaluate() }
         .onChange(of: documents.selected.content) { _, _ in scheduleEvaluate() }
+        .onChange(of: showFXProvenance) { _, _ in evaluate() }
         .onAppear { evaluate() }
         .onReceive(NotificationCenter.default.publisher(for: CityResolver.notificationName)) { _ in
             evaluate()
@@ -253,9 +258,62 @@ struct CalculatorPane: View {
 
     private func evaluate() {
         guard let engine else { return }
-        let newResults = engine.evaluate(documents.selected.content)
+        let newResults = attachFXProvenance(to: engine.evaluate(documents.selected.content))
         results = newResults
         Self.logIdentityUnitRegressions(in: documents.selected.content, results: newResults)
+    }
+
+    // MARK: - FX provenance annotation
+
+    /// Attach the rate-provenance tag ("Source: ECB") under currency
+    /// results, extra-tiny and muted via the annotation machinery.
+    /// One tag per RUN of consecutive currency lines, on the run's last
+    /// line — a column of conversions is priced by one snapshot, so the
+    /// tag bundles at the end instead of repeating under every row. A
+    /// hair of deviation from a live ticker is a property of the source,
+    /// not a bug; naming the source reframes it. Deliberately NO date:
+    /// the ECB stamp is a CET business day, which reads a day off for
+    /// users in other timezones (typing on Aug 27 in Asia while the
+    /// freshest ECB print says Aug 26) — the source name alone carries
+    /// the message for almost everyone. Hidden via the "Show currency
+    /// rate source" toggle in Settings.
+    private func attachFXProvenance(to results: [LineResult]) -> [LineResult] {
+        guard showFXProvenance,
+              model.fxSnapshotDate != nil,
+              !model.fxShortSourceLabel.isEmpty,
+              !model.fxCurrencyCodes.isEmpty else { return results }
+        let tag = "Source: \(model.fxShortSourceLabel)"
+        var out = results
+        var lastCurrencyIndex: Int?
+        func closeRun() {
+            // Never clobber an engine-supplied annotation (METAR freshness
+            // etc.) — currency lines don't carry one today, but stay safe.
+            if let i = lastCurrencyIndex, out[i].annotation == nil {
+                out[i] = LineResult(line: out[i].line, raw: out[i].raw,
+                                    value: out[i].value, kind: out[i].kind,
+                                    annotation: .init(label: tag, tone: .fresh),
+                                    hint: out[i].hint)
+            }
+            lastCurrencyIndex = nil
+        }
+        for (i, r) in results.enumerated() {
+            if isFXCurrencyResult(r) {
+                lastCurrencyIndex = i
+            } else {
+                closeRun()
+            }
+        }
+        closeRun()
+        return out
+    }
+
+    /// A line whose result carries a currency code priced by the current
+    /// FX snapshot ("20 669.33 IDR" → IDR). Recognises the fiat leg of
+    /// crypto conversions too (`1 BTC in eur` results in EUR).
+    private func isFXCurrencyResult(_ r: LineResult) -> Bool {
+        guard r.kind == .expression, let value = r.value,
+              let lastToken = value.split(separator: " ").last else { return false }
+        return model.fxCurrencyCodes.contains(lastToken.uppercased())
     }
 
     // MARK: - Render (LineResult → NSAttributedString)
@@ -413,8 +471,14 @@ struct CalculatorPane: View {
         guard let a = r.annotation else { return nil }
         let attr = NSMutableAttributedString(string: a.label)
         let range = NSRange(location: 0, length: attr.length)
+        // The FX provenance tag ("Source: ECB", produced by
+        // attachFXProvenance in this file) sits a step below even the
+        // freshness chips — it's ambient context, not a warning, so it
+        // gets the smallest legible size while METAR/TAF ages keep 10.5.
+        let isProvenance = a.label.hasPrefix("Source: ")
         attr.addAttribute(.font,
-                          value: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular),
+                          value: NSFont.monospacedSystemFont(ofSize: isProvenance ? 9 : 10.5,
+                                                             weight: .regular),
                           range: range)
         let paragraph = NSMutableParagraphStyle()
         // Mirror the body alignment: weather lines render flush-left
@@ -429,7 +493,9 @@ struct CalculatorPane: View {
         case .stale:    colour = NSColor(VektorTheme.statusCaution)
         case .outdated: colour = NSColor(VektorTheme.statusBad)
         }
-        attr.addAttribute(.foregroundColor, value: colour, range: range)
+        attr.addAttribute(.foregroundColor,
+                          value: isProvenance ? colour.withAlphaComponent(0.7) : colour,
+                          range: range)
         return attr
     }
 
