@@ -537,7 +537,7 @@ extension NumiEngine {
         nf.numberStyle = .decimal
         nf.minimumFractionDigits = 2
         nf.maximumFractionDigits = 2
-        nf.groupingSeparator = ","
+        nf.groupingSeparator = " "  // match vektor.format result grouping
         return nf
     }
 
@@ -635,7 +635,7 @@ extension NumiEngine {
         nf.numberStyle = .decimal
         nf.minimumFractionDigits = 0
         nf.maximumFractionDigits = max(0, min(14, p))
-        nf.groupingSeparator = ","
+        nf.groupingSeparator = " "  // match vektor.format result grouping
         let formatted = nf.string(from: NSNumber(value: value)) ?? String(value)
         return "\(formatted)  (\(count) values)"
     }

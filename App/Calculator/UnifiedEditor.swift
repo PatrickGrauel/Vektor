@@ -208,8 +208,26 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
     /// deleted documents on the next text edit.
     var resolvePageReference: (String) -> Bool = { _ in false }
 
+    /// Last-applied state of the digit-grouping setting, so a Settings
+    /// toggle re-styles the open document without waiting for an edit.
+    private var digitGroupingApplied = DigitGrouping.isEnabled
+    private var defaultsObserver: NSObjectProtocol?
+
     init(text: Binding<String>) {
         self.text = text
+        super.init()
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, DigitGrouping.isEnabled != self.digitGroupingApplied,
+                  let storage = self.column?.editor?.textStorage else { return }
+            self.applyLineColors(to: storage)
+            self.column?.relayoutAndResize()
+        }
+    }
+
+    deinit {
+        if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
     }
 
     func textDidChange(_ notification: Notification) {
@@ -267,6 +285,8 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
         let defaultColor = NSColor(VektorTheme.text)
         let headerColor  = NSColor(VektorTheme.accent)
         let commentColor = NSColor(VektorTheme.muted)
+        let grouping = DigitGrouping.isEnabled
+        digitGroupingApplied = grouping
         var loc = scope.location
         let end = scope.location + scope.length
         while loc < end {
@@ -301,6 +321,10 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
             applyPageReferenceStyling(to: storage,
                                       lineString: lineString,
                                       lineRange: lineRange)
+            applyDigitGrouping(to: storage,
+                               lineString: lineString,
+                               lineRange: lineRange,
+                               enabled: grouping)
             let newLoc = lineRange.location + lineRange.length
             if newLoc == loc { break }
             loc = newLoc
@@ -330,6 +354,26 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
         let absRange = NSRange(location: lineRange.location + local.location,
                                length: local.length)
         storage.addAttribute(.foregroundColor, value: commentColor, range: absRange)
+    }
+
+    /// Display-only thousands grouping: widen the gap after each group
+    /// boundary with kerning so `22111555.11` reads as `22 111 555.11`
+    /// while the text itself stays raw (see `DigitGrouping`). Kern is
+    /// cleared first — typed characters inherit it from the digit before
+    /// the caret, and a deleted digit moves every boundary.
+    private func applyDigitGrouping(to storage: NSTextStorage,
+                                    lineString: String,
+                                    lineRange: NSRange,
+                                    enabled: Bool) {
+        storage.removeAttribute(.kern, range: lineRange)
+        guard enabled else { return }
+        let font = (storage.attribute(.font, at: lineRange.location, effectiveRange: nil) as? NSFont)
+            ?? .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        let gap = font.pointSize * 0.35
+        for i in DigitGrouping.gapPositions(in: lineString) {
+            storage.addAttribute(.kern, value: gap,
+                                 range: NSRange(location: lineRange.location + i, length: 1))
+        }
     }
 
     /// Attribute key the AutocompletingTextView's mouseDown handler

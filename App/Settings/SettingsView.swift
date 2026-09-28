@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import VektorEngine
 
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
@@ -10,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("vektor.appearance") private var appearance: String = "system"
     @AppStorage("vektor.menuBarOnly") private var menuBarOnly: Bool = false
     @AppStorage("vektor.fx.showProvenance") private var showFXProvenance: Bool = true
+    @AppStorage(DigitGrouping.defaultsKey) private var digitGrouping: Bool = true
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @AppStorage("vektor.alwaysOnTop") private var alwaysOnTop: Bool = false
     @State private var showDocs: Bool = false
@@ -58,6 +60,8 @@ struct SettingsView: View {
                         }
                     }
                 Toggle("Show currency rate source", isOn: $showFXProvenance)
+                Toggle("Space out large numbers while typing", isOn: $digitGrouping)
+                    .help("Visually groups 5+ digit numbers (12 000) in the editor. The text itself is unchanged.")
                 Text("Tags currency results with their rate source — e.g. \u{201C}ECB\u{201D}. ECB publishes one official reference rate per business day, so results can differ slightly from live tickers. Currencies the ECB doesn't publish (e.g. RUB) come from ExchangeRate-API, crypto prices from CoinGecko.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Always on top", isOn: $alwaysOnTop)

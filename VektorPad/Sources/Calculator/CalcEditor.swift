@@ -83,6 +83,8 @@ struct CalcEditor: UIViewRepresentable {
             // deleted `@ref` doesn't leave a dangling underline behind.
             storage.removeAttribute(.underlineStyle, range: scope)
             storage.removeAttribute(Self.pageReferenceAttributeKey, range: scope)
+            storage.removeAttribute(.kern, range: scope)
+            let grouping = DigitGrouping.isEnabled
 
             let defaultColor = VektorTheme.UI.text
             let headerColor  = VektorTheme.UI.accent
@@ -106,6 +108,7 @@ struct CalcEditor: UIViewRepresentable {
                     applyTrailingComment(storage, lineString, lineRange, commentColor)
                 }
                 applyPageRefs(storage, lineString, lineRange)
+                if grouping { applyDigitGrouping(storage, lineString, lineRange) }
                 let newLoc = lineRange.location + lineRange.length
                 if newLoc == loc { break }
                 loc = newLoc
@@ -124,6 +127,17 @@ struct CalcEditor: UIViewRepresentable {
             let local = m.range(at: 1)
             let abs = NSRange(location: lineRange.location + local.location, length: local.length)
             storage.addAttribute(.foregroundColor, value: color, range: abs)
+        }
+
+        /// Display-only thousands grouping: kerning after each group
+        /// boundary so `22111555.11` reads as `22 111 555.11` while the
+        /// text stays raw (see `DigitGrouping`).
+        private func applyDigitGrouping(_ storage: NSTextStorage, _ lineString: String, _ lineRange: NSRange) {
+            let gap = CalcEditorView.font.pointSize * 0.35
+            for i in DigitGrouping.gapPositions(in: lineString) {
+                storage.addAttribute(.kern, value: gap,
+                                     range: NSRange(location: lineRange.location + i, length: 1))
+            }
         }
 
         /// Attribute key a future tap-handler reads to navigate `@ref` jumps.
