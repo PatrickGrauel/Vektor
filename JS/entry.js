@@ -552,6 +552,34 @@ try {
   }, { override: true });
 } catch (e) { /* ignore */ }
 
+// math.js parses `a:b` (and a bare `: b`, i.e. `1:b`) as a range and
+// materialises every element synchronously. A pasted `: 92004301010121`
+// tried to build 92 trillion numbers and hung the main thread. Small ranges
+// stay usable (`sum(1:10)`); anything huge errors out instead.
+try {
+  const MAX_RANGE = 100000;
+  const num = (x) => (x && typeof x.toNumber === "function") ? x.toNumber() : Number(x);
+  // Wrap both the JS function and the parser's transform (which makes `1:5`
+  // end-inclusive) so neither path can materialise a huge range.
+  const guard = (orig) => function (...args) {
+    let [start, end, step] = args;
+    if (args.length === 1 && typeof start === "string") {
+      const parts = start.split(":").map(Number);
+      if (parts.length === 2) [start, end] = parts;
+      else if (parts.length === 3) [start, step, end] = parts;
+    }
+    const s = num(start), e = num(end), st = step === undefined ? 1 : num(step);
+    if (!Number.isNaN(s) && !Number.isNaN(e) && !Number.isNaN(st) && st !== 0 &&
+        !(Math.abs((e - s) / st) <= MAX_RANGE)) {
+      throw new Error("Range too large");
+    }
+    return orig(...args);
+  };
+  const range = guard(math.range);
+  range.transform = guard(math.expression.transform.range);
+  math.import({ range }, { override: true });
+} catch (e) { /* ignore */ }
+
 // Calculator-convention logarithms. math.js ships `log(x)` as the natural
 // log and provides `log10`/`log2`, but Tally's documentation promises the
 // schoolbook convention: `log(x)` = base-10, `ln(x)` = natural, and the

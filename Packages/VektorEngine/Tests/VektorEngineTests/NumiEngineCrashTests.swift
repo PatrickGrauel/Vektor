@@ -27,6 +27,15 @@ final class NumiEngineCrashTests: XCTestCase {
         XCTAssertEqual(r.count, 1)
     }
 
+    /// math.js reads `: N` as the range `1:N`; a pasted `: 92004301010121`
+    /// used to build 92 trillion elements and hang the main thread.
+    func test_hugeRange_doesNotHang() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate(": 92004301010121\n1:1e15\nsum(1:10)")
+        XCTAssertEqual(r.count, 3)
+        XCTAssertEqual(r[2].value, "55")
+    }
+
     func test_largeDocument() throws {
         let engine = try NumiEngine()
         // 500 lines of mixed valid/invalid expressions.
