@@ -78,8 +78,43 @@ final class DistanceSunTests: XCTestCase {
 
     func test_sun_unknownIcao_message() throws {
         let engine = try NumiEngine()
-        let r = engine.evaluate("sun ZZZZ")
-        XCTAssertTrue((r[0].value ?? "").contains("no coordinates"))
+        let r = engine.evaluate("sun EDDM ZZZZ")
+        XCTAssertTrue((r[0].value ?? "").contains("ZZZZ: no coordinates"))
+    }
+
+    // MARK: - Sun by place name
+
+    func test_sunSummary_munich_daytime_countsDownToSunset() {
+        let tz = TimeZone(identifier: "Europe/Berlin")!
+        // 2026-06-21 12:00 local — sunrise ≈ 05:12, sunset ≈ 21:17.
+        let now = ISO8601DateFormatter().date(from: "2026-06-21T10:00:00Z")!
+        let v = NumiEngine.sunSummary(latitude: 48.137, longitude: 11.575,
+                                      timeZone: tz, name: "Munich", now: now)
+        XCTAssertTrue(v.hasPrefix("Sunrise 05:1"), v)
+        XCTAssertTrue(v.contains("Sunset 21:1"), v)
+        XCTAssertTrue(v.contains("sets in 9h"), v)
+        XCTAssertTrue(v.hasSuffix("(Munich)"), v)
+    }
+
+    func test_sunSummary_afterDark_countsDownToTomorrowsSunrise() {
+        let tz = TimeZone(identifier: "Asia/Makassar")!   // Bali, UTC+8
+        // 2026-10-06 22:00 local.
+        let now = ISO8601DateFormatter().date(from: "2026-10-06T14:00:00Z")!
+        let v = NumiEngine.sunSummary(latitude: -8.65, longitude: 115.13,
+                                      timeZone: tz, name: "Canggu", now: now)
+        XCTAssertTrue(v.contains("Sunrise 06:0"), v)
+        XCTAssertTrue(v.contains("Sunset 18:"), v)
+        XCTAssertTrue(v.contains("rises in 8h"), v)
+    }
+
+    func test_sunPlace_dispatch() throws {
+        let engine = try NumiEngine()
+        let r = engine.evaluate("sun Munich\nMunich sun\nsun EDDM\nit is sun")
+        XCTAssertNotNil(r[0].value)
+        XCTAssertFalse((r[0].value ?? "").contains("no coordinates"), r[0].value ?? "")
+        XCTAssertNotNil(r[1].value)
+        XCTAssertTrue((r[2].value ?? "").contains("CT-end"))           // airport path unchanged
+        XCTAssertFalse((r[3].value ?? "").contains("Resolving"))       // no geocoding for prose
     }
 
     func test_sun_multipleStations() throws {

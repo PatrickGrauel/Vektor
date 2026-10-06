@@ -25,6 +25,19 @@ public actor CityResolver {
         /// If the user typed an airport / abbreviation, what they typed.
         /// Used to render "Munich (MUC)" style hints.
         public let originalCode: String?
+        /// Coordinates, only set by `resolveLocation` (the static DB has
+        /// none). Optional so caches written before they existed decode.
+        public var latitude: Double? = nil
+        public var longitude: Double? = nil
+
+        public init(canonicalName: String, timezoneId: String, originalCode: String?,
+                    latitude: Double? = nil, longitude: Double? = nil) {
+            self.canonicalName = canonicalName
+            self.timezoneId = timezoneId
+            self.originalCode = originalCode
+            self.latitude = latitude
+            self.longitude = longitude
+        }
     }
 
     /// Fires every time the resolver successfully resolves a previously
@@ -105,6 +118,54 @@ public actor CityResolver {
         return geo
     }
 
+    // MARK: - Locations (coordinates)
+
+    /// Synchronous lookup of a place *with* coordinates (for `sun Munich`).
+    /// Kept apart from `cached(for:)` because static-DB hits carry a
+    /// timezone but no coordinates.
+    public nonisolated func cachedLocation(for raw: String) -> Resolved? {
+        Self.synchronousCacheSnapshot.get(Self.locationPrefix + normalize(raw))
+    }
+
+    /// True once geocoding `raw` has failed this session, so callers can
+    /// say "not found" instead of "Resolving…" forever.
+    public nonisolated func locationLookupFailed(for raw: String) -> Bool {
+        Self.failedLocations.contains(normalize(raw))
+    }
+
+    /// Async lookup that always yields coordinates: CLGeocoder, with the
+    /// static DB's name + timezone preferred when it knows the place.
+    @discardableResult
+    public func resolveLocation(query raw: String) async -> Resolved? {
+        let key = normalize(raw)
+        let cacheKey = Self.locationPrefix + key
+        if let hit = dynamicCache[cacheKey] { return hit }
+        if TimezoneBridge().legacyResolveLocal(raw) != nil { return nil }
+
+        var result: Resolved?
+        if let geo = await geocode(query: raw) {
+            let known = AirportDB.lookup(key)
+            result = Resolved(canonicalName: known?.canonicalName ?? geo.canonicalName,
+                              timezoneId: known?.timezoneId ?? geo.timezoneId,
+                              originalCode: known?.originalCode,
+                              latitude: geo.latitude, longitude: geo.longitude)
+        }
+        if let result {
+            dynamicCache[cacheKey] = result
+            Self.synchronousCacheSnapshot.set(cacheKey, result)
+            persistCache()
+        } else {
+            Self.failedLocations.insert(key)
+        }
+        await MainActor.run {
+            NotificationCenter.default.post(name: Self.notificationName, object: nil)
+        }
+        return result
+    }
+
+    private static let locationPrefix = "LOC|"
+    private static let failedLocations = SyncSet()
+
     // MARK: - Internals
 
     /// Thread-safe mirror of the dynamic cache so nonisolated `cached(for:)`
@@ -131,7 +192,9 @@ public actor CityResolver {
             } else {
                 name = nameParts[0]
             }
-            return Resolved(canonicalName: name, timezoneId: tz.identifier, originalCode: nil)
+            let coord = placemark.location?.coordinate
+            return Resolved(canonicalName: name, timezoneId: tz.identifier, originalCode: nil,
+                            latitude: coord?.latitude, longitude: coord?.longitude)
         } catch {
             return nil
         }
@@ -162,6 +225,21 @@ private final class SyncSnapshot: @unchecked Sendable {
     func set(_ key: String, _ value: CityResolver.Resolved) {
         lock.lock(); defer { lock.unlock() }
         dict[key] = value
+    }
+}
+
+private final class SyncSet: @unchecked Sendable {
+    private var set: Set<String> = []
+    private let lock = NSLock()
+
+    func contains(_ key: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return set.contains(key)
+    }
+
+    func insert(_ key: String) {
+        lock.lock(); defer { lock.unlock() }
+        set.insert(key)
     }
 }
 

@@ -349,6 +349,11 @@ public final class NumiEngine {
                 continue
             }
 
+            if let sun = Self.handleSunPlaceLine(trimmed) {
+                results.append(.init(line: idx, raw: raw, value: sun, kind: .expression))
+                continue
+            }
+
             if let day = Self.handleDateKeywordLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: day, kind: .expression))
                 continue
@@ -1600,6 +1605,12 @@ public final class NumiEngine {
         let tokens = line.split(separator: " ", omittingEmptySubsequences: true).map { String($0).uppercased() }
         let icaos = Array(tokens.dropFirst())
         guard !icaos.isEmpty else { return nil }
+        // A single word without airport coordinates (`sun Rome`, `sun Bali`)
+        // is a place name — leave it to `handleSunPlaceLine`.
+        if icaos.count == 1,
+           RunwayDatabase.shared.coordinate(forICAO: AirportCodeMap.canonicalICAO(from: icaos[0]) ?? icaos[0]) == nil {
+            return nil
+        }
 
         // Local timezone for displaying alongside Zulu. Vektor doesn't
         // resolve the airport's local timezone from coordinates (that
@@ -1635,6 +1646,86 @@ public final class NumiEngine {
             lines.append("\(prefix)SR \(sr) · SS \(ss) · CT-end \(ce)")
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// `sun Munich`, `sun in Canggu`, `Munich sun` — the place counterpart
+    /// of `Munich time`: today's sunrise + sunset in the place's own
+    /// timezone, plus a countdown to whichever comes next. Airport codes
+    /// with known coordinates stay on `handleSunLine` (Zulu, CT-end).
+    static func handleSunPlaceLine(_ line: String) -> String? {
+        let ns = line as NSString
+        let full = NSRange(location: 0, length: ns.length)
+        var place: String?
+        var explicit = false
+        if let m = try? NSRegularExpression(pattern: #"^sun(?:rise|set)?\s+(?:in\s+|at\s+)?(.+)$"#,
+                                            options: [.caseInsensitive]).firstMatch(in: line, range: full) {
+            place = ns.substring(with: m.range(at: 1)); explicit = true
+        } else if let m = try? NSRegularExpression(pattern: #"^(.+?)\s+sun(?:rise|set)?$"#,
+                                                   options: [.caseInsensitive]).firstMatch(in: line, range: full) {
+            place = ns.substring(with: m.range(at: 1))
+        }
+        guard let raw = place?.trimmingCharacters(in: .whitespaces), !raw.isEmpty,
+              raw.rangeOfCharacter(from: CharacterSet(charactersIn: "+-*/=()")) == nil
+        else { return nil }
+
+        let resolver = CityResolver.shared
+        if let loc = resolver.cachedLocation(for: raw),
+           let lat = loc.latitude, let lon = loc.longitude {
+            let tz = TimeZone(identifier: loc.timezoneId) ?? .current
+            return sunSummary(latitude: lat, longitude: lon, timeZone: tz, name: loc.canonicalName)
+        }
+        // `Munich sun` only claims the line when the place is one we
+        // already know — otherwise "it's sun" etc. would start geocoding.
+        guard explicit || TimezoneBridge().resolveSync(raw) != nil else { return nil }
+        if resolver.locationLookupFailed(for: raw) { return "Unknown place: \(raw)" }
+        Task.detached { _ = await CityResolver.shared.resolveLocation(query: raw) }
+        return "Resolving \(raw)…"
+    }
+
+    /// "Sunrise 07:12 · Sunset 18:38 · sets in 2h 14min  (Munich)".
+    /// Today = the calendar day *at the place*; the countdown targets the
+    /// next sunrise or sunset, rolling into tomorrow after dark.
+    static func sunSummary(latitude: Double, longitude: Double,
+                           timeZone: TimeZone, name: String,
+                           now: Date = Date()) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        // SolarEvents works in UTC days; sample the neighbouring days and
+        // keep the events that fall on the place's local today/tomorrow.
+        var rises: [Date] = [], sets: [Date] = []
+        for dayOffset in -1...2 {
+            guard let d = cal.date(byAdding: .day, value: dayOffset, to: now) else { continue }
+            let ev = SolarEvents.events(date: d, latitude: latitude, longitude: longitude)
+            if let r = ev.sunrise { rises.append(r) }
+            if let s = ev.sunset { sets.append(s) }
+        }
+        let today = { (d: Date) in cal.isDate(d, inSameDayAs: now) }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        fmt.timeZone = timeZone
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        let sr = rises.first(where: today).map(fmt.string(from:)) ?? "—"
+        let ss = sets.first(where: today).map(fmt.string(from:)) ?? "—"
+
+        let nextRise = rises.filter { $0 > now }.min()
+        let nextSet = sets.filter { $0 > now }.min()
+        var countdown = ""
+        switch (nextRise, nextSet) {
+        case let (r?, s?):
+            countdown = r < s ? " · rises in \(durationText(r.timeIntervalSince(now)))"
+                              : " · sets in \(durationText(s.timeIntervalSince(now)))"
+        case let (r?, nil): countdown = " · rises in \(durationText(r.timeIntervalSince(now)))"
+        case let (nil, s?): countdown = " · sets in \(durationText(s.timeIntervalSince(now)))"
+        case (nil, nil):    countdown = ""
+        }
+        return "Sunrise \(sr) · Sunset \(ss)\(countdown)  (\(name))"
+    }
+
+    private static func durationText(_ seconds: TimeInterval) -> String {
+        let mins = Int((seconds / 60).rounded())
+        let h = mins / 60, m = mins % 60
+        if h == 0 { return "\(m)min" }
+        return m == 0 ? "\(h)h" : "\(h)h \(m)min"
     }
 
     private static func formatPair(_ date: Date?,
