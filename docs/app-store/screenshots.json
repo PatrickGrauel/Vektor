@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "canvas": { "width": 2880, "height": 1800 },
+  "style": { "background": "#F7F4EE", "ink": "#0E1521", "muted": "#7C766A", "accent": "#C2611F" },
+  "frames": [
+    {
+      "id": "01-project-estimate",
+      "headline": "Write the math. See the answer.",
+      "subline": "Keep your notes and calculations on the same sheet.",
+      "capture": "../../artifacts/app-store/raw/01-project-estimate.png",
+      "captureKind": "window",
+      "appearance": "light",
+      "expectedCapture": { "minWidth": 1800, "minHeight": 1000 },
+      "sourceTextSizePx": 26,
+      "typedContent": "# Project estimate\nrate = 85\nhours = 12\nsubtotal = rate * hours\ntax = 20% of subtotal\nsubtotal + tax",
+      "captureNotes": "Calculator; new sheet via Command-N. Precision 2, digit grouping on. Resize actual panel to about 1280x600 points on a 2x display. Show all lines and full result column; no selection or menus. Final result 1 224.00."
+    },
+    {
+      "id": "02-conversions",
+      "headline": "Conversions, in plain language.",
+      "subline": "Units, percentages and discounts, right where you type.",
+      "capture": "../../artifacts/app-store/raw/02-conversions.png",
+      "captureKind": "window",
+      "appearance": "light",
+      "expectedCapture": { "minWidth": 1800, "minHeight": 1000 },
+      "sourceTextSizePx": 26,
+      "typedContent": "# Quick conversions\n10 mi in km\n2.5 kg in lb\n2 hours in minutes\n15% off 240",
+      "captureNotes": "New sheet. Keep whole panel and result column visible. Expected numeric values at precision 2: 16.09, 5.51, 120.00, 204.00, with units as rendered by the app."
+    },
+    {
+      "id": "03-changing-inputs",
+      "headline": "Change a number. Rethink the plan.",
+      "subline": "Variables keep the related calculations up to date.",
+      "capture": "../../artifacts/app-store/raw/03-changing-inputs.png",
+      "captureKind": "window",
+      "appearance": "light",
+      "expectedCapture": { "minWidth": 1800, "minHeight": 1000 },
+      "sourceTextSizePx": 26,
+      "typedContent": "# Weekend budget\nguests = 6\ndinner = 180\nride = 36\n(dinner + ride) / guests",
+      "captureNotes": "Final still uses six guests and result 36.00. For the video, begin with guests = 4 (result 54.00), then replace only 4 with 6. Do not add an equals sign or result to the input."
+    },
+    {
+      "id": "04-saved-sheets",
+      "headline": "Your useful math, kept together.",
+      "subline": "Save separate sheets. Pin the ones you return to.",
+      "capture": "../../artifacts/app-store/raw/04-saved-sheets.png",
+      "captureKind": "window",
+      "appearance": "light",
+      "expectedCapture": { "minWidth": 1800, "minHeight": 1000 },
+      "sourceTextSizePx": 26,
+      "typedContent": "# Weekend budget\nguests = 6\ndinner = 180\nride = 36\n(dinner + ride) / guests",
+      "captureNotes": "Use a clean capture account. Create and pin Project estimate, Quick conversions and Weekend budget using bodies from frames 1-3. Select Weekend budget, then click the SHEET header; show the real sheets popover with these titles and pin states. Keep the popover inside the captured region. No invented search results or Command-L shortcut."
+    },
+    {
+      "id": "05-travel-money",
+      "headline": "Compare currencies in one place.",
+      "subline": "Live rates for travel money, with the source in view.",
+      "capture": "../../artifacts/app-store/raw/05-travel-money.png",
+      "captureKind": "window",
+      "appearance": "light",
+      "expectedCapture": { "minWidth": 1800, "minHeight": 1000 },
+      "sourceTextSizePx": 26,
+      "typedContent": "# Travel money\n100 EUR in USD\n1500 THB in EUR\n0.01 BTC in USD",
+      "captureNotes": "Internet connected. Wait for genuine fiat and crypto rates to arrive. Show actual outputs and rate-source annotation. Inspect the source annotation and sanity-check the conversion outputs before capture. Settings has no live-rate status panel. Never use cold-start 1:1 fallback outputs, fixtures or manually replaced numbers. Source annotation uses smaller app text than sourceTextSizePx; inspect it in the finished frame separately."
+    },
+    {
+      "id": "06-aviation-study",
+      "headline": "For aviation study, too.",
+      "subline": "Weather reports and conversions for study and reference.",
+      "capture": "../../artifacts/app-store/raw/06-aviation-study.png",
+      "captureKind": "window",
+      "appearance": "light",
+      "expectedCapture": { "minWidth": 1800, "minHeight": 1000 },
+      "sourceTextSizePx": 26,
+      "typedContent": "# Aviation study\n120 kt in km/h\n29.92 inHg in hPa\n2 hours in seconds\nMETAR KSFO",
+      "captureNotes": "Use Calculator, not a fabricated cockpit view. Wait for a real report; show station, report and freshness indicator. Do not imply flight planning certification. Keep the complete readable report in view; if it does not fit, shorten the input to the first three conversion lines and change subline to 'Speed, pressure and time conversions for study and reference.' Update this manifest before rendering. Do not crop away stale/error status or type a fake METAR."
+    }
+  ]
+}
