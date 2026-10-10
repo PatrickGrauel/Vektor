@@ -1,36 +1,55 @@
 import SwiftUI
 import VektorAviation
 
+/// Weight & balance worksheet. Stations, station limits and the CG envelope
+/// polygon are all entered by the pilot from their own POH/AFM; the checks
+/// (takeoff, landing after planned burn, zero fuel, station limits) live in
+/// `WeightBalance.evaluate` in VektorAviation so the iPad app runs the same ones.
 struct WeightBalanceView: View {
     @StateObject private var store = AircraftStore.aircraft()
-    @State private var profileName: String = "Cessna 172 (sample)"
-    @State private var stations: [EditableStation] = AircraftProfile.cessna172.stations
-    @State private var envelope: EditableEnvelope = AircraftProfile.cessna172.envelope
+    @State private var selection: String = Self.exampleTag
+    @State private var profile: WBProfile = .example
     @State private var showSaveSheet = false
-    @State private var saveName: String = ""
+
+    private static let exampleTag = "builtin.example"
+    private static let blankTag = "builtin.blank"
 
     var body: some View {
+        let evaluation = profile.evaluate()
         Form {
+            noticeSection
             profilePickerSection
+            resultsSection(evaluation)
             stationsSection
             envelopeSection
-            resultsSection
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(VektorTheme.background)
         .sheet(isPresented: $showSaveSheet) {
-            SaveAircraftSheet(initialName: profileName) { name in
-                let saved = SavedAircraft(
-                    id: UUID(),
-                    name: name,
-                    stations: stations.map { .init(id: $0.id, name: $0.name, weight: $0.weight, arm: $0.arm) },
-                    envelope: .init(minCG: envelope.minCG, maxCG: envelope.maxCG, maxWeight: envelope.maxWeight)
-                )
+            SaveAircraftSheet(initialName: currentSaved?.name ?? "") { name in
+                var saved = profile
+                // Same name → overwrite that aircraft instead of duplicating it.
+                saved.id = store.saved.first(where: { $0.name == name })?.id ?? UUID()
+                saved.name = name
                 store.add(saved)
-                profileName = "★ \(name)"
+                profile = saved
+                selection = saved.id.uuidString
                 showSaveSheet = false
             } onCancel: { showSaveSheet = false }
+        }
+    }
+
+    // MARK: - Notice
+
+    private var noticeSection: some View {
+        Section {
+            HStack(alignment: .top, spacing: 8) {
+                StatusBadge(level: .caution)
+                Text("Enter every station arm, station limit and envelope corner from **this airframe's** POH/AFM and current weight & balance record. The example profile is fictional and must not be used for flight.")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -39,26 +58,22 @@ struct WeightBalanceView: View {
     private var profilePickerSection: some View {
         Section {
             HStack {
-                Picker("Aircraft profile", selection: $profileName) {
-                    Section("Built-in") {
-                        ForEach(AircraftProfile.builtIn, id: \.name) { p in
-                            Text(p.name).tag(p.name)
-                        }
+                Picker("Aircraft profile", selection: $selection) {
+                    Section("Templates") {
+                        Text(WBProfile.example.name).tag(Self.exampleTag)
+                        Text("New aircraft (blank)").tag(Self.blankTag)
                     }
                     if !store.saved.isEmpty {
                         Section("Saved") {
                             ForEach(store.saved) { saved in
-                                Text("★ \(saved.name)").tag("★ \(saved.name)")
+                                Text("★ \(saved.name)").tag(saved.id.uuidString)
                             }
                         }
                     }
                 }
-                .onChange(of: profileName) { _, newName in load(profile: newName) }
+                .onChange(of: selection) { _, tag in load(tag) }
 
                 Button {
-                    saveName = profileName.hasPrefix("★ ")
-                        ? String(profileName.dropFirst(2))
-                        : profileName
                     showSaveSheet = true
                 } label: {
                     Label("Save", systemImage: "square.and.arrow.down")
@@ -67,8 +82,7 @@ struct WeightBalanceView: View {
                 if let saved = currentSaved {
                     Button(role: .destructive) {
                         store.remove(saved.id)
-                        profileName = AircraftProfile.cessna172.name
-                        load(profile: profileName)
+                        selection = Self.exampleTag
                     } label: {
                         Image(systemName: "trash")
                     }
@@ -88,20 +102,31 @@ struct WeightBalanceView: View {
                     Text("Weight (lb)").font(.caption).foregroundStyle(.secondary)
                     Text("Arm (in)").font(.caption).foregroundStyle(.secondary)
                     Text("Moment").font(.caption).foregroundStyle(.secondary)
+                    Text("Max (lb)").font(.caption).foregroundStyle(.secondary)
+                        .help("Station limit from the POH (e.g. baggage). Leave 0 for none.")
+                    Text("Fuel").font(.caption).foregroundStyle(.secondary)
+                        .help("Fuel stations are reduced by the planned burn for the landing check and emptied for the zero-fuel check.")
                     Color.clear.frame(width: 22)
                 }
-                Divider().gridCellColumns(5)
+                Divider().gridCellColumns(7)
 
-                ForEach($stations) { $st in
+                ForEach($profile.stations) { $st in
                     GridRow {
-                        TextField("", text: $st.name).textFieldStyle(.roundedBorder)
-                        TextField("", value: $st.weight, format: .number).textFieldStyle(.roundedBorder)
-                        TextField("", value: $st.arm,   format: .number).textFieldStyle(.roundedBorder)
+                        TextField("Station", text: $st.name).textFieldStyle(.roundedBorder)
+                            .labelsHidden().frame(minWidth: 150)
+                        TextField("Weight", value: $st.weight, format: .number).textFieldStyle(.roundedBorder)
+                            .labelsHidden()
+                            .foregroundStyle(st.weight < 0 || isOverLimit(st) ? VektorTheme.statusBad : VektorTheme.text)
+                        TextField("Arm", value: $st.arm,   format: .number).textFieldStyle(.roundedBorder)
+                            .labelsHidden()
                         Text(String(format: "%.0f", st.weight * st.arm))
                             .font(.system(.body, design: .monospaced))
                             .foregroundStyle(.secondary)
+                        TextField("Max", value: limitBinding($st), format: .number).textFieldStyle(.roundedBorder)
+                            .labelsHidden().frame(width: 70)
+                        Toggle("", isOn: $st.isFuel).labelsHidden().toggleStyle(.checkbox)
                         Button {
-                            stations.removeAll { $0.id == st.id }
+                            profile.stations.removeAll { $0.id == st.id }
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundStyle(VektorTheme.statusBad)
@@ -114,15 +139,20 @@ struct WeightBalanceView: View {
             }
 
             Button {
-                stations.append(.init(name: "Station \(stations.count + 1)", weight: 0, arm: 0))
+                profile.stations.append(.init(name: "Station \(profile.stations.count + 1)", weight: 0, arm: 0))
             } label: {
                 Label("Add station", systemImage: "plus.circle.fill")
             }
             .buttonStyle(.borderless)
+
+            LabeledContent("Planned fuel burn (lb)") {
+                TextField("", value: $profile.fuelBurn, format: .number)
+                    .textFieldStyle(.roundedBorder).frame(width: 90)
+            }
         } header: {
             Text("Stations")
         } footer: {
-            Text("Tip: weight in lb, arm in inches aft of datum. Save the loaded values to keep them across launches.")
+            Text("Weight in lb, arm in inches aft of datum. Fuel weight = gallons × 6 lb for avgas (check your fuel type). Planned burn should include taxi.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -130,105 +160,129 @@ struct WeightBalanceView: View {
     // MARK: - Envelope
 
     private var envelopeSection: some View {
-        Section("Envelope") {
-            HStack {
-                LabeledContent("Min CG (in)") {
-                    TextField("", value: $envelope.minCG, format: .number)
-                        .textFieldStyle(.roundedBorder).frame(width: 80)
+        Section {
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                GridRow {
+                    Text("#").font(.caption).foregroundStyle(.secondary)
+                    Text("CG (in)").font(.caption).foregroundStyle(.secondary)
+                    Text("Weight (lb)").font(.caption).foregroundStyle(.secondary)
+                    Color.clear.frame(width: 22)
                 }
-                LabeledContent("Max CG (in)") {
-                    TextField("", value: $envelope.maxCG, format: .number)
-                        .textFieldStyle(.roundedBorder).frame(width: 80)
-                }
-                LabeledContent("Max weight (lb)") {
-                    TextField("", value: $envelope.maxWeight, format: .number)
-                        .textFieldStyle(.roundedBorder).frame(width: 100)
+                Divider().gridCellColumns(4)
+                ForEach(Array($profile.envelope.enumerated()), id: \.element.id) { index, $pt in
+                    GridRow {
+                        Text("\(index + 1)").foregroundStyle(.secondary).monospacedDigit()
+                        TextField("CG", value: $pt.cg, format: .number).textFieldStyle(.roundedBorder)
+                            .labelsHidden().frame(width: 90)
+                        TextField("Weight", value: $pt.weight, format: .number).textFieldStyle(.roundedBorder)
+                            .labelsHidden().frame(width: 100)
+                        Button {
+                            profile.envelope.removeAll { $0.id == pt.id }
+                        } label: {
+                            Image(systemName: "minus.circle.fill").foregroundStyle(VektorTheme.statusBad)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove envelope point")
+                    }
                 }
             }
+            Button {
+                let last = profile.envelope.last
+                profile.envelope.append(.init(cg: last?.cg ?? 0, weight: last?.weight ?? 0))
+            } label: {
+                Label("Add envelope point", systemImage: "plus.circle.fill")
+            }
+            .buttonStyle(.borderless)
+
+            if profile.weightBalance.envelope?.isSimpleBox == true {
+                HStack(alignment: .top, spacing: 6) {
+                    StatusBadge(level: .caution)
+                    Text("This envelope is a plain rectangle. Most aircraft have a forward CG limit that moves aft as weight increases — check the POH chart and add its break-point corners.")
+                        .font(.callout).fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(StatusLevel.caution.colour)
+            }
+
+            WBEnvelopeChart(envelope: profile.envelope, conditions: profile.evaluate().conditions)
+                .frame(height: 240)
+        } header: {
+            Text("CG envelope")
+        } footer: {
+            Text("Enter the corners of the POH's normal-category envelope in order around its outline (e.g. clockwise from the bottom-left). Its highest weight is treated as maximum takeoff weight. Limits are inclusive.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     // MARK: - Result
 
-    private var resultsSection: some View {
+    private func resultsSection(_ e: WeightBalance.Evaluation) -> some View {
         Section("Result") {
-            let result = computed
-            LabeledContent("Total weight", value: String(format: "%.0f lb", result.totalWeight))
-            LabeledContent("Total moment", value: String(format: "%.0f", result.totalMoment))
-            // CG only makes sense when the airplane actually has weight on
-            // it; otherwise it's 0/0 (engine clamps to 0 but that's just a
-            // placeholder, not a real CG). Hide it and the envelope verdict
-            // until at least one station has a non-zero weight.
-            if result.totalWeight > 0 {
-                LabeledContent("Center of gravity", value: String(format: "%.2f in", result.cg))
-                if let inEnv = result.inEnvelope {
-                    let level: StatusLevel = inEnv ? .good : .bad
-                    HStack {
-                        Image(systemName: inEnv ? "checkmark.seal.fill" : "xmark.seal.fill")
-                        Text(inEnv ? "Within envelope" : "Out of envelope")
+            ForEach(e.conditions, id: \.kind) { c in
+                LabeledContent(c.kind.rawValue) {
+                    HStack(spacing: 8) {
+                        if c.result.totalWeight > 0 {
+                            Text(String(format: "%.0f lb  ·  CG %.2f in  ·  moment %.0f",
+                                        c.result.totalWeight, c.result.cg, c.result.totalMoment))
+                                .monospacedDigit()
+                            StatusBadge(level: c.result.inEnvelope == true ? .good : .bad)
+                        } else {
+                            Text("—")
+                        }
                     }
-                    .foregroundStyle(level.colour)
-                    .font(.headline)
-                    .accessibilityLabel(inEnv ? "Within envelope" : "Out of envelope")
                 }
-            } else {
-                LabeledContent("Center of gravity", value: "—")
-                    .help("Enter at least one non-zero station weight to compute CG.")
             }
+
+            ForEach(e.problems, id: \.self) { issue in
+                HStack(alignment: .top, spacing: 6) {
+                    StatusBadge(level: .bad)
+                    Text(issue).fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(StatusLevel.bad.colour)
+            }
+
+            let ok = e.isWithinLimits
+            HStack {
+                Image(systemName: ok ? "checkmark.seal.fill" : "xmark.seal.fill")
+                Text(ok ? "Within limits for all conditions" : "Not within limits")
+            }
+            .foregroundStyle((ok ? StatusLevel.good : StatusLevel.bad).colour)
+            .font(.headline)
+            .accessibilityElement(children: .combine)
         }
     }
 
-    private var computed: WeightBalance.Result {
-        let wb = WeightBalance(
-            stations: stations.map { .init(name: $0.name, weight: $0.weight, armIn: $0.arm) },
-            envelope: .init(vertices: [
-                (envelope.minCG, 0),
-                (envelope.maxCG, 0),
-                (envelope.maxCG, envelope.maxWeight),
-                (envelope.minCG, envelope.maxWeight),
-            ])
+    // MARK: - Helpers
+
+    private func isOverLimit(_ st: WBProfile.Station) -> Bool {
+        guard let max = st.maxWeight else { return false }
+        return st.weight > max
+    }
+
+    /// 0 in the field means "no limit".
+    private func limitBinding(_ st: Binding<WBProfile.Station>) -> Binding<Double> {
+        Binding(
+            get: { st.wrappedValue.maxWeight ?? 0 },
+            set: { st.wrappedValue.maxWeight = $0 > 0 ? $0 : nil }
         )
-        return wb.compute()
     }
 
-    private var currentSaved: SavedAircraft? {
-        guard profileName.hasPrefix("★ ") else { return nil }
-        let name = String(profileName.dropFirst(2))
-        return store.saved.first(where: { $0.name == name })
+    private var currentSaved: WBProfile? {
+        store.saved.first(where: { $0.id.uuidString == selection })
     }
 
-    private func load(profile name: String) {
-        if name.hasPrefix("★ ") {
-            let userName = String(name.dropFirst(2))
-            guard let saved = store.saved.first(where: { $0.name == userName }) else { return }
-            stations = saved.stations.map { .init(name: $0.name, weight: $0.weight, arm: $0.arm) }
-            envelope = .init(minCG: saved.envelope.minCG,
-                             maxCG: saved.envelope.maxCG,
-                             maxWeight: saved.envelope.maxWeight)
-        } else if let p = AircraftProfile.builtIn.first(where: { $0.name == name }) {
-            stations = p.stations
-            envelope = p.envelope
+    private func load(_ tag: String) {
+        switch tag {
+        case Self.exampleTag: profile = .example
+        case Self.blankTag:   profile = .blank
+        default:
+            if let saved = store.saved.first(where: { $0.id.uuidString == tag }) { profile = saved }
         }
-    }
-
-    struct EditableStation: Identifiable, Equatable {
-        var id = UUID()
-        var name: String
-        var weight: Double
-        var arm: Double
-    }
-
-    struct EditableEnvelope: Equatable {
-        var minCG: Double
-        var maxCG: Double
-        var maxWeight: Double
     }
 }
 
 // MARK: - Save sheet
 
 private struct SaveAircraftSheet: View {
-    let initialName: String
     let onSave: (String) -> Void
     let onCancel: () -> Void
     @State private var name: String
@@ -236,7 +290,6 @@ private struct SaveAircraftSheet: View {
     init(initialName: String,
          onSave: @escaping (String) -> Void,
          onCancel: @escaping () -> Void) {
-        self.initialName = initialName
         self.onSave = onSave
         self.onCancel = onCancel
         self._name = State(initialValue: initialName)
@@ -245,8 +298,10 @@ private struct SaveAircraftSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Save aircraft profile").font(.headline).foregroundStyle(VektorTheme.text)
-            TextField("Aircraft name (e.g. 'My PA-28-181 N12345')", text: $name)
+            TextField("Aircraft name (e.g. 'PA-28-181 N12345')", text: $name)
                 .textFieldStyle(.roundedBorder)
+            Text("Saving under an existing name replaces that aircraft.")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Cancel", action: onCancel)
@@ -263,60 +318,4 @@ private struct SaveAircraftSheet: View {
         .frame(width: 380)
         .themedSheet()
     }
-}
-
-// MARK: - Built-in starter profiles
-
-private struct AircraftProfile {
-    let name: String
-    let stations: [WeightBalanceView.EditableStation]
-    let envelope: WeightBalanceView.EditableEnvelope
-
-    static let builtIn: [AircraftProfile] = [cessna172, piperPA28, diamondDA40, empty]
-
-    static let cessna172 = AircraftProfile(
-        name: "Cessna 172 (sample)",
-        stations: [
-            .init(name: "Empty",   weight: 1700, arm: 39.0),
-            .init(name: "Pilot",   weight: 170,  arm: 37.0),
-            .init(name: "Copilot", weight: 0,    arm: 37.0),
-            .init(name: "Rear seat", weight: 0,  arm: 73.0),
-            .init(name: "Fuel (40 gal)", weight: 240, arm: 48.0),
-            .init(name: "Baggage A", weight: 30, arm: 95.0),
-        ],
-        envelope: .init(minCG: 35.0, maxCG: 47.3, maxWeight: 2300)
-    )
-
-    static let piperPA28 = AircraftProfile(
-        name: "Piper PA-28 (sample)",
-        stations: [
-            .init(name: "Empty",   weight: 1450, arm: 86.0),
-            .init(name: "Pilot",   weight: 170,  arm: 85.5),
-            .init(name: "Copilot", weight: 0,    arm: 85.5),
-            .init(name: "Rear seat", weight: 0,  arm: 118.0),
-            .init(name: "Fuel (50 gal)", weight: 300, arm: 95.0),
-            .init(name: "Baggage", weight: 20, arm: 142.0),
-        ],
-        envelope: .init(minCG: 82.0, maxCG: 93.0, maxWeight: 2150)
-    )
-
-    static let diamondDA40 = AircraftProfile(
-        name: "Diamond DA40 (sample)",
-        stations: [
-            .init(name: "Empty",   weight: 1750, arm: 96.0),
-            .init(name: "Front row", weight: 340, arm: 96.0),
-            .init(name: "Rear row",  weight: 0,   arm: 133.0),
-            .init(name: "Fuel (40 gal)", weight: 240, arm: 105.0),
-            .init(name: "Baggage", weight: 30, arm: 153.0),
-        ],
-        envelope: .init(minCG: 94.0, maxCG: 107.0, maxWeight: 2645)
-    )
-
-    static let empty = AircraftProfile(
-        name: "Custom (empty)",
-        stations: [
-            .init(name: "Empty", weight: 0, arm: 0),
-        ],
-        envelope: .init(minCG: 0, maxCG: 100, maxWeight: 10000)
-    )
 }

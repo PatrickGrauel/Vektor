@@ -309,7 +309,7 @@ final class DocumentStore: ObservableObject {
         # Units (use `in` or `to`)
         10 mi in km
         180 lbs in kg
-        100°F in °C
+        100 degF in degC
 
         # Money (live FX, no key needed)
         100 EUR in USD
@@ -408,7 +408,7 @@ final class DocumentStore: ObservableObject {
         # Pressure, weight, temperature
         29.92 inHg in hPa                // standard pressure
         180 lbs in kg
-        100°F in °C
+        100 degF in degC
         -40°C in °F                      // the temperature where the scales meet
 
         # Time and energy

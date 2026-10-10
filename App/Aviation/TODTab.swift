@@ -9,9 +9,9 @@ struct TODTab: View {
     var body: some View {
         Form {
             Section("Inputs") {
-                NumericField(title: "Altitude to lose", value: $altToLose,   range: 0...40_000, step: 500, suffix: "ft")
-                NumericField(title: "Descent rate",     value: $descentRate, range: 100...3000, step: 50,  suffix: "fpm")
-                NumericField(title: "Ground speed",     value: $groundSpeed, range: 0...500,    step: 5,   suffix: "kt")
+                NumericField(title: "Altitude to lose", value: $altToLose,   range: 0...60_000, step: 500, suffix: "ft")
+                NumericField(title: "Descent rate",     value: $descentRate, range: 100...6000, step: 50,  suffix: "fpm")
+                NumericField(title: "Ground speed",     value: $groundSpeed, range: 0...600,    step: 5,   suffix: "kt")
             }
             Section("Top of Descent") {
                 let d = Fuel.topOfDescentDistance(altitudeToLoseFt: altToLose, descentRateFpm: descentRate, groundSpeed: groundSpeed)

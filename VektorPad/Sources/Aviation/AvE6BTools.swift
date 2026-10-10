@@ -19,6 +19,11 @@ struct WindTriangleView: View {
                 NumberField(label: "Wind speed", value: $windSpeed, suffix: "kt")
             }
             Section("Solution") {
+                if !s.isSolvable {
+                    Label("No solution — the wind component exceeds the true airspeed, so no heading can hold this course.",
+                          systemImage: "xmark.octagon.fill")
+                        .foregroundStyle(VektorTheme.statusBad)
+                } else {
                 MetricGrid {
                     MetricBox(title: "Heading", value: String(format: "%03.0f°", s.headingDeg), tone: .accent)
                     MetricBox(title: "Ground speed", value: String(format: "%.0f kt", s.groundSpeed), tone: .accent)
@@ -29,6 +34,7 @@ struct WindTriangleView: View {
                     MetricBox(title: "Crosswind \(s.crosswind >= 0 ? "(R)" : "(L)")",
                               value: String(format: "%.0f kt", abs(s.crosswind)),
                               tone: abs(s.crosswind) >= 20 ? .bad : .neutral)
+                }
                 }
             }
         }
@@ -76,8 +82,7 @@ struct RunwayWindView: View {
     @AppStorage("vektor.av.rw.windSpeed") private var windSpeed = 18.0
 
     var body: some View {
-        let heading = Runway.headingFromRunwayId(runway) ?? 0
-        let c = Runway.components(runwayHeadingDeg: heading, windFromDeg: windFrom, windSpeed: windSpeed)
+        let heading = Runway.heading(fromRunwayOrHeading: runway)
         Form {
             Section("Runway & wind") {
                 HStack {
@@ -87,12 +92,15 @@ struct RunwayWindView: View {
                         .multilineTextAlignment(.trailing)
                         .autocorrectionDisabled()
                         .frame(maxWidth: 90)
-                    Text("→ \(Int(heading))°").font(.caption).foregroundStyle(VektorTheme.muted)
+                    Text(heading.map { String(format: "→ %03.0f°", $0) } ?? "→ ?")
+                        .font(.caption).foregroundStyle(VektorTheme.muted)
                 }
                 NumberField(label: "Wind from", value: $windFrom, suffix: "°")
                 NumberField(label: "Wind speed", value: $windSpeed, suffix: "kt")
             }
-            Section("Components") {
+            Section {
+                if let heading {
+                let c = Runway.components(runwayHeadingDeg: heading, windFromDeg: windFrom, windSpeed: windSpeed)
                 MetricGrid {
                     MetricBox(title: c.headwind >= 0 ? "Headwind" : "Tailwind",
                               value: String(format: "%.0f kt", abs(c.headwind)),
@@ -101,6 +109,15 @@ struct RunwayWindView: View {
                               value: String(format: "%.0f kt", c.crosswind),
                               tone: c.crosswind >= 20 ? .bad : (c.crosswind >= 15 ? .caution : .neutral))
                 }
+                } else {
+                    Label("Invalid runway — enter a designator (27L) or a 3-digit heading (273).",
+                          systemImage: "xmark.octagon.fill")
+                        .foregroundStyle(VektorTheme.statusBad)
+                }
+            } header: {
+                Text("Components")
+            } footer: {
+                Text("A runway number is its magnetic heading rounded to 10° (up to 5° off); type the published 3-digit heading for precision. ATIS/tower winds are magnetic, METAR/TAF winds are true.")
             }
         }
         .financeFormChrome("Runway wind")

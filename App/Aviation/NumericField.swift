@@ -5,7 +5,8 @@ import SwiftUI
 /// column of these stays aligned. Use `ClampedNumericField` from
 /// `SharedUI.swift` directly when the value must clamp at commit time
 /// (e.g. course = 999° in aviation); this field is for the lighter
-/// "type-and-step" case where the stepper enforces range.
+/// "type-and-step" case. Typed values outside `range` are clamped on
+/// commit, so keep ranges wide enough for any real input.
 struct NumericField: View {
     let title: String
     @Binding var value: Double
@@ -27,6 +28,10 @@ struct NumericField: View {
                 Stepper("", value: $value, in: range, step: step)
                     .labelsHidden()
             }
+        }
+        .onChange(of: value) { _, v in
+            let clamped = v.isFinite ? min(max(v, range.lowerBound), range.upperBound) : range.lowerBound
+            if clamped != v { value = clamped }
         }
     }
 }

@@ -258,7 +258,7 @@ struct DocumentationView: View {
         Doc(title: "Aviation") {
             Doc_.paragraph("A few calculations show up enough in flight planning that they have dedicated functions:")
             Doc_.code("""
-            density_altitude(8000, 25, 29.92)   // PA ft, OAT °C, altimeter inHg
+            density_altitude(8000, 25, 29.92)   // field elev ft, OAT °C, altimeter inHg
             pressure_altitude(5000, 29.42)
             isa_temp(10000)                      // ISA temp at altitude
             ground_speed(360, 100, 280, 20)      // course, TAS, wind from, wind kt

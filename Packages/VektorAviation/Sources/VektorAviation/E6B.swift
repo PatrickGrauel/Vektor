@@ -16,6 +16,11 @@ public enum E6B {
         public let headwind: Double
         /// Crosswind component (positive = from the right), in input speed units.
         public let crosswind: Double
+        /// False when no heading can hold the course: the crosswind component
+        /// is at least the TAS, or the aircraft would make no progress along
+        /// the course (GS ≤ 0). WCA / heading / GS are meaningless then and
+        /// must not be shown as a solution.
+        public let isSolvable: Bool
     }
 
     /// Solve the wind triangle.
@@ -29,12 +34,14 @@ public enum E6B {
                                     windFromDeg: Double,
                                     windSpeed: Double) -> WindSolution {
         let windAngle = ((windFromDeg - course) * .pi / 180.0)
+        let tasPositive = tas > 0
         // Crosswind & headwind relative to course.
         let crosswind = windSpeed * sin(windAngle)
         let headwind = windSpeed * cos(windAngle)
 
         // WCA solved from wind triangle: sin(WCA) = crosswind / TAS.
-        let sinWca = max(min(crosswind / max(tas, 0.0001), 1.0), -1.0)
+        let rawSinWca = crosswind / max(tas, 0.0001)
+        let sinWca = max(min(rawSinWca, 1.0), -1.0)
         let wcaRad = asin(sinWca)
         let wcaDeg = wcaRad * 180.0 / .pi
 
@@ -50,7 +57,8 @@ public enum E6B {
             headingDeg: heading,
             groundSpeed: gs,
             headwind: headwind,
-            crosswind: crosswind
+            crosswind: crosswind,
+            isSolvable: tasPositive && abs(rawSinWca) < 1.0 && gs > 0
         )
     }
 

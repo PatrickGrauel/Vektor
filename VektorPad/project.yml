@@ -31,6 +31,11 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources
+      # Aviation safety-critical UI shared verbatim with the Mac app.
+      - path: ../App/Aviation/AviationDisclaimerView.swift
+        group: Sources/Aviation/Shared
+      - path: ../App/Aviation/WBEnvelopeChart.swift
+        group: Sources/Aviation/Shared
     resources:
       - path: Resources/Assets.xcassets
     dependencies:

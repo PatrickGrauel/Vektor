@@ -408,7 +408,7 @@ private struct PanelRootView: View {
             .background(SettingsBridge())
             // No trial chrome on the calculator surface — during the trial the
             // app looks completely normal. "Unlock" lives in Settings; the
-            // paywall appears only once the 7 days have actually run out.
+            // paywall appears only once the configured trial has run out.
             .overlay {
                 if !ent.isUnlocked {
                     PaywallView()

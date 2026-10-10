@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import VektorAviation
 
 /// JSON-backed `UserDefaults` store for any `Codable & Identifiable` type.
 ///

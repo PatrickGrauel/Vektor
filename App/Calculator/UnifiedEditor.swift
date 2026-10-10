@@ -17,6 +17,8 @@ import VektorEngine
 /// Width is user-adjustable by dragging the divider; the chosen split
 /// persists via `@AppStorage` at the call site.
 struct UnifiedEditor: NSViewRepresentable {
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("vektor.calc.syntaxColoring") private var syntaxColoring: Bool = true
     @Binding var text: String
     @Binding var editorWidth: CGFloat
     let results: [LineResult]
@@ -35,6 +37,7 @@ struct UnifiedEditor: NSViewRepresentable {
     /// unresolved refs fall through to default caret placement so the
     /// token is still text-editable.
     var resolvePageReference: (String) -> Bool = { _ in false }
+    var isKnownUnit: (String) -> Bool = { _ in false }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
@@ -59,6 +62,9 @@ struct UnifiedEditor: NSViewRepresentable {
         tv.onPageReferenceClicked = onPageReferenceClicked
         tv.resolvePageReference = resolvePageReference
         context.coordinator.resolvePageReference = resolvePageReference
+        context.coordinator.syntaxColoringEnabled = syntaxColoring
+        context.coordinator.isKnownUnit = isKnownUnit
+        context.coordinator.appliedColorScheme = colorScheme
         tv.isRichText = false
         tv.isEditable = true
         tv.isSelectable = true
@@ -140,6 +146,20 @@ struct UnifiedEditor: NSViewRepresentable {
         tv.onPageReferenceClicked = onPageReferenceClicked
         tv.resolvePageReference = resolvePageReference
         context.coordinator.resolvePageReference = resolvePageReference
+        context.coordinator.isKnownUnit = isKnownUnit
+        let styleChanged = context.coordinator.syntaxColoringEnabled != syntaxColoring
+            || context.coordinator.appliedColorScheme != colorScheme
+        context.coordinator.syntaxColoringEnabled = syntaxColoring
+        context.coordinator.appliedColorScheme = colorScheme
+        if styleChanged {
+            scroll.backgroundColor = NSColor(VektorTheme.background)
+            tv.backgroundColor = NSColor(VektorTheme.background)
+            tv.insertionPointColor = NSColor(VektorTheme.accent)
+            tv.typingAttributes[.foregroundColor] = NSColor(VektorTheme.text)
+            column.needsDisplay = true
+            column.gutter?.needsDisplay = true
+            tv.needsDisplay = true
+        }
 
         // Text refresh (e.g. document switch).
         let textChanged = (tv.string != text)
@@ -153,6 +173,8 @@ struct UnifiedEditor: NSViewRepresentable {
             // had stamped is gone. Invalidate so the next layout pass
             // re-stamps even if the new extras dict happens to match.
             column.invalidateAppliedExtras()
+        } else if styleChanged, let storage = tv.textStorage {
+            context.coordinator.applyLineColors(to: storage)
         }
 
         // Capture results-changed BEFORE we overwrite gutter.results.
@@ -207,6 +229,22 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
     /// each render so the styling pass picks up newly-created or
     /// deleted documents on the next text edit.
     var resolvePageReference: (String) -> Bool = { _ in false }
+    var isKnownUnit: (String) -> Bool = { _ in false }
+    var syntaxColoringEnabled = true {
+        didSet {
+            if oldValue != syntaxColoringEnabled { syntaxSource = nil }
+        }
+    }
+    var appliedColorScheme: ColorScheme?
+
+    private struct SyntaxSpan: Equatable {
+        let range: NSRange
+        let kind: EditorSyntaxHighlighter.Kind
+    }
+    private var syntaxSource: String?
+    private var syntaxLines: [[SyntaxSpan]] = []
+    private var syntaxByLine: [Int: [SyntaxSpan]] = [:]
+    private var pendingSyntaxRanges: [NSRange] = []
 
     /// Last-applied state of the digit-grouping setting, so a Settings
     /// toggle re-styles the open document without waiting for an edit.
@@ -232,6 +270,15 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
 
     func textDidChange(_ notification: Notification) {
         guard let tv = notification.object as? AutocompletingTextView else { return }
+        // Declaration edits can change references elsewhere in the sheet.
+        // Restyle those lines after the character edit cycle, so expanding
+        // NSTextStorage's edited range cannot move the user's caret.
+        if let storage = tv.textStorage {
+            let changedRanges = pendingSyntaxRanges
+            pendingSyntaxRanges.removeAll()
+            for range in changedRanges { applyLineColors(to: storage, in: range) }
+        }
+        tv.typingAttributes[.foregroundColor] = NSColor(VektorTheme.text)
         text.wrappedValue = tv.string
         tv.recomputeSuggestion()
         column?.relayoutAndResize()
@@ -245,9 +292,9 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
 
     /// Per-keystroke syntax highlighting, applied DURING the storage
     /// edit cycle so the new character lands with the right colour.
-    /// Re-colors only the lines intersecting `editedRange` — for a
-    /// typical edit that's 1–2 lines instead of the whole document,
-    /// keeping keystroke cost O(1) regardless of doc size.
+    /// Re-colors only the lines intersecting `editedRange`. Token context
+    /// is scanned once; other lines with changed roles are refreshed after
+    /// the edit cycle rather than expanding this storage edit's range.
     func textStorage(_ textStorage: NSTextStorage,
                      didProcessEditing editedMask: NSTextStorageEditActions,
                      range editedRange: NSRange,
@@ -263,6 +310,45 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
         let fullText = storage.string as NSString
         applyLineColors(to: storage,
                         in: NSRange(location: 0, length: fullText.length))
+        pendingSyntaxRanges.removeAll()
+    }
+
+    /// Tokenize once per text change and compare local spans by line. The
+    /// character edit styles its own line immediately; only other lines whose
+    /// roles changed need a deferred pass (e.g. removing a variable definition).
+    private func prepareSyntaxHighlights(in source: String) {
+        guard syntaxSource != source else { return }
+        let tokens = syntaxColoringEnabled
+            ? EditorSyntaxHighlighter.tokens(in: source, isKnownUnit: isKnownUnit)
+            : []
+        let ns = source as NSString
+        var lines: [[SyntaxSpan]] = []
+        var byLine: [Int: [SyntaxSpan]] = [:]
+        var changedRanges: [NSRange] = []
+        var location = 0
+        var tokenIndex = 0
+        while location < ns.length {
+            let lineRange = ns.lineRange(for: NSRange(location: location, length: 0))
+            var spans: [SyntaxSpan] = []
+            while tokenIndex < tokens.count, tokens[tokenIndex].range.location < NSMaxRange(lineRange) {
+                let token = tokens[tokenIndex]
+                spans.append(SyntaxSpan(
+                    range: NSRange(location: token.range.location - location, length: token.range.length),
+                    kind: token.kind
+                ))
+                tokenIndex += 1
+            }
+            if lines.count >= syntaxLines.count || syntaxLines[lines.count] != spans {
+                changedRanges.append(lineRange)
+            }
+            lines.append(spans)
+            byLine[location] = spans
+            location = NSMaxRange(lineRange)
+        }
+        syntaxSource = source
+        syntaxLines = lines
+        syntaxByLine = byLine
+        pendingSyntaxRanges = changedRanges
     }
 
     /// Walks the storage line-by-line within the line-aligned expansion
@@ -273,6 +359,7 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
     /// trigger `.editedCharacters`, so re-stamping from inside the
     /// storage delegate doesn't recurse.
     func applyLineColors(to storage: NSTextStorage, in range: NSRange) {
+        prepareSyntaxHighlights(in: storage.string)
         let fullText = storage.string as NSString
         let total = fullText.length
         guard total > 0 else { return }
@@ -285,6 +372,9 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
         let defaultColor = NSColor(VektorTheme.text)
         let headerColor  = NSColor(VektorTheme.accent)
         let commentColor = NSColor(VektorTheme.muted)
+        let variableColor = NSColor(VektorTheme.syntaxVariable)
+        let unitColor = NSColor(VektorTheme.syntaxUnit)
+        let operatorColor = NSColor(VektorTheme.syntaxOperator)
         let grouping = DigitGrouping.isEnabled
         digitGroupingApplied = grouping
         var loc = scope.location
@@ -302,6 +392,18 @@ final class UnifiedCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDeleg
                 colour = defaultColor
             }
             storage.addAttribute(.foregroundColor, value: colour, range: lineRange)
+            for span in syntaxByLine[lineRange.location] ?? [] {
+                let tokenColor: NSColor
+                switch span.kind {
+                case .variable: tokenColor = variableColor
+                case .unit: tokenColor = unitColor
+                case .operatorSymbol: tokenColor = operatorColor
+                }
+                storage.addAttribute(.foregroundColor,
+                                     value: tokenColor,
+                                     range: NSRange(location: lineRange.location + span.range.location,
+                                                    length: span.range.length))
+            }
             // Dim any trailing `// comment` on expression / header lines
             // so it matches the muted styling of full-line `//` comments.
             // The engine already strips trailing comments before eval

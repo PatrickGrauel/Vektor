@@ -75,37 +75,42 @@ public enum Atmosphere {
 
     // MARK: - True altitude
     //
-    // True altitude is the actual MSL altitude. On a non-standard day, the
-    // pressure-derived altimeter reading is off by roughly 4 ft per °C of
-    // deviation from ISA per 1000 ft of pressure altitude — written here
-    // using the ratio form so it stays accurate at any altitude.
+    // True altitude is the actual MSL altitude. The altimeter is only
+    // "right" at the station whose setting is dialled in; above it, the
+    // error grows with the height of the air column between the station and
+    // the aircraft and with how far that column's temperature is off ISA.
+    // So the correction scales with height ABOVE THE ALTIMETER-SETTING
+    // SOURCE, not height above sea level (using MSL height overcorrects
+    // badly at high-elevation fields):
     //
-    //   TA = IA × (T_actual / T_isa)        (both in Kelvin, ratio form)
+    //   TA = elev + (IA − elev) × (T_actual / T_isa)      (Kelvin, ratio form)
     //
-    // Rule-of-thumb correction (what pilots compute mentally):
-    //   ΔTA = 4 × (OAT − ISA) × (IA / 1000)
+    // T_actual is the OAT at the aircraft's altitude; T_isa is ISA at the
+    // pressure altitude. Rule-of-thumb equivalent pilots compute mentally:
+    //   ΔTA ≈ 4 ft × (OAT − ISA) × (IA − elev) / 1000
 
-    /// True altitude from indicated altitude, altimeter, and OAT.
+    /// True altitude from indicated altitude, altimeter, OAT at altitude and
+    /// the elevation of the station that supplied the altimeter setting.
     public static func trueAltitudeFt(indicatedAltitudeFt: Double,
                                       altimeterInHg: Double,
-                                      oatC: Double) -> Double {
+                                      oatC: Double,
+                                      stationElevationFt: Double = 0) -> Double {
         let pa = pressureAltitudeFt(indicatedAltitudeFt: indicatedAltitudeFt,
                                     altimeterInHg: altimeterInHg)
         let isaC = isaTempC(altitudeFt: pa)
-        // Ratio form (Kelvin)
-        let tActualK = oatC + 273.15
-        let tIsaK = isaC + 273.15
-        let ratio = tActualK / tIsaK
-        return indicatedAltitudeFt * ratio
+        let ratio = (oatC + 273.15) / (isaC + 273.15)
+        return stationElevationFt + (indicatedAltitudeFt - stationElevationFt) * ratio
     }
 
-    /// Quick mental-math correction in feet (FAA rule of thumb).
+    /// Quick mental-math correction in feet (FAA rule of thumb). Only for
+    /// cross-checking; `trueAltitudeFt` is the value to display.
     public static func trueAltitudeCorrectionFt(indicatedAltitudeFt: Double,
                                                 altimeterInHg: Double,
-                                                oatC: Double) -> Double {
+                                                oatC: Double,
+                                                stationElevationFt: Double = 0) -> Double {
         let pa = pressureAltitudeFt(indicatedAltitudeFt: indicatedAltitudeFt,
                                     altimeterInHg: altimeterInHg)
         let isaC = isaTempC(altitudeFt: pa)
-        return 4.0 * (oatC - isaC) * (indicatedAltitudeFt / 1000.0)
+        return 4.0 * (oatC - isaC) * ((indicatedAltitudeFt - stationElevationFt) / 1000.0)
     }
 }

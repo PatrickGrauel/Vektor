@@ -48,6 +48,21 @@ enum VektorTheme {
         light: NSColor(red: 0x6F/255, green: 0x42/255, blue: 0xC1/255, alpha: 1)
     )
 
+    /// Editor variables, with deeper ink on the light canvas.
+    static let syntaxVariable = dyn(
+        dark:  NSColor(red: 0x6F/255, green: 0xB7/255, blue: 0xFF/255, alpha: 1),
+        light: NSColor(red: 0x1E/255, green: 0x6F/255, blue: 0xD4/255, alpha: 1)
+    )
+
+    /// Editor units and currencies. Numbers keep the text colour.
+    static let syntaxUnit = dyn(
+        dark:  NSColor(red: 0xB8/255, green: 0xA1/255, blue: 0xE3/255, alpha: 1),
+        light: NSColor(red: 0x76/255, green: 0x52/255, blue: 0xAA/255, alpha: 1)
+    )
+
+    /// Math operators use the orange accent in both appearances.
+    static let syntaxOperator = accent
+
     /// Primary text.
     static let text = dyn(
         dark:  NSColor(red: 0xEE/255, green: 0xEE/255, blue: 0xF2/255, alpha: 1),

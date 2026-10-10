@@ -11,7 +11,7 @@ All times refer to the final timeline, not raw take duration. Use direct cuts an
 | Time | Screen / exact action | Overlay | End-of-shot proof |
 | --- | --- | --- | --- |
 | 0.0–3.0 s | Calculator, Project estimate body from screenshot 1. Begin with the last line `subtotal + ta`; type the final `x`, wait for evaluation, hold. | Write the math. See the answer. | The real 1 224.00 result beside its expression, with the named inputs visible |
-| 3.0–7.0 s | Cut to Weekend budget, initially `guests = 4`. Select only the `4`, replace with `6`, wait, hold. Other lines match screenshot 3. | Change an input. Results follow. | Cost per guest changes from 54.00 to 36.00 |
+| 3.0–7.0 s | Cut to Weekend budget, initially `guests = 4`. Select only the `4`, replace with `6`, wait, hold. Other lines match screenshot 5. | Change an input. Results follow. | Cost per guest changes from 54.00 to 36.00 |
 | 7.0–11.0 s | Quick conversions body from screenshot 2 with first three conversions complete. Type `15% off 240` as the fourth expression, wait, hold. | Convert as you type. | 204.00 and the other real unit results |
 | 11.0–15.0 s | On Weekend budget, click its pin if needed, then SHEET header. Show real pinned Project estimate, Quick conversions and Weekend budget. Click Project estimate; close popover via the selection. | Keep useful sheets close. | Selection returns to the saved estimate |
 | 15.0–20.0 s | One real recording region containing Vektor's panel and actual macOS menu-bar icon. Click the icon to hide the panel, then click it again to show the same sheet. Do not simulate a global keystroke. | A click away in your menu bar. | Same work reappears, no fabricated icon or composite desktop |

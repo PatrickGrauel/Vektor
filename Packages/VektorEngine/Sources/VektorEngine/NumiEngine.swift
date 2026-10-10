@@ -94,6 +94,7 @@ public final class NumiEngine {
     /// "<n> mm in m"-style queries that look like military-time conversions
     /// but are actually unit conversions in disguise.
     private let knownUnitNames: Set<String>
+    private var displayUnitCache: [String: Bool] = [:]
 
     public init() throws {
         guard let ctx = JSContext() else { throw NumiEngineError.jsContextUnavailable }
@@ -130,6 +131,24 @@ public final class NumiEngine {
         if isKnownUnit(token) { return true }
         let js = "(() => { try { return math.Unit.isValuelessUnit('\(token)'); } catch (e) { return false; } })()"
         return context.evaluateScript(js)?.toBool() ?? false
+    }
+
+    /// Recognition for display-only syntax highlighting. Currency names share
+    /// the preprocessor's allow-list; physical units use the actual registry,
+    /// including prefixed forms such as km. This never evaluates an expression
+    /// or fetches rates. Validate before passing a token to the JS unit lookup.
+    public func isKnownDisplayUnit(_ token: String) -> Bool {
+        guard !token.isEmpty, token.count <= 64,
+              token.unicodeScalars.allSatisfy({
+                  CharacterSet.letters.contains($0) || CharacterSet.decimalDigits.contains($0) || $0 == "_"
+              }) else { return false }
+        if NumiPreprocessor.currencyCodes.contains(token.uppercased()) { return true }
+        if let cached = displayUnitCache[token] { return cached }
+        let known = isParsableUnitToken(token)
+        // Bound the cache while users type incomplete or unknown identifiers.
+        if displayUnitCache.count >= 512 { displayUnitCache.removeAll(keepingCapacity: true) }
+        displayUnitCache[token] = known
+        return known
     }
 
     /// Posted whenever fresh FX or crypto rates land in the JSContext.
@@ -237,6 +256,15 @@ public final class NumiEngine {
             // After stripping, an all-comment-but-not-starting-with-//
             // line is impossible — the only way trimmed went empty is
             // if trimmedRaw was already empty, which we handled above.
+
+            if let clockResult = handleClockLine(trimmed) {
+                results.append(.init(line: idx, raw: raw,
+                                     value: clockResult.value, kind: clockResult.kind,
+                                     hint: clockResult.hint))
+                // Like timezone readings, clock results are display text,
+                // rather than quantities for `prev` or an aggregate.
+                continue
+            }
 
             if let tzResult = handleTimezoneLine(trimmed) {
                 results.append(.init(line: idx, raw: raw, value: tzResult, kind: .timezone))
@@ -454,6 +482,92 @@ public final class NumiEngine {
 
     // MARK: - Timezone phrase recognition
 
+    /// Bare wall-clock arithmetic has precedence over physical units: the
+    /// suffix in `9pm` means evening, while `100pm` remains picometers.
+    /// Unqualified military numbers stay numeric (`1800 + 100` is 1900).
+    private static let bareClockRegex = try? NSRegularExpression(
+        pattern: #"(?i)^(\d{1,2})(?:([:.])(\d{2}))?\s*([ap]m)?$"#)
+    private static let clockPrefixRegex = try? NSRegularExpression(
+        pattern: #"(?i)^(\d{1,2}(?:[.:]\d{2})?\s*[ap]m|\d{1,2}:\d{2})(?=\s|[+\-*/×÷^%=]|$)"#)
+
+    private func handleClockLine(_ raw: String) -> (value: String, kind: LineResult.Kind, hint: String?)? {
+        var line = raw.trimmingCharacters(in: .whitespaces)
+        // Match the editor's existing label and inline-note conventions.
+        // A clock's own colon is preserved because its LHS contains digits.
+        if let colon = line.firstIndex(of: ":") {
+            let label = line[..<colon].trimmingCharacters(in: .whitespaces)
+            if !label.isEmpty && label.allSatisfy({ $0.isLetter || $0 == " " || $0 == "_" || $0 == "-" }) {
+                line = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        if let note = line.range(of: #"\s+""#, options: .regularExpression) {
+            line = String(line[..<note.lowerBound]).trimmingCharacters(in: .whitespaces)
+        }
+        line = line.replacingOccurrences(of: "−", with: "-")
+        let ns = line as NSString
+        guard let match = Self.clockPrefixRegex?.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)),
+              let clock = Self.parseBareClock(ns.substring(with: match.range)) else { return nil }
+        let tail = ns.substring(from: NSMaxRange(match.range)).trimmingCharacters(in: .whitespaces)
+        if tail.isEmpty {
+            return (Self.formatBareClock(clock.seconds, meridiem: clock.meridiem), .timezone, nil)
+        }
+        guard let operation = tail.first, "+-*/×÷^%=".contains(operation) else { return nil }
+        let (anchor, offset) = extractTimeOffset(from: line)
+        if let clock = Self.parseBareClock(anchor), offset.isFinite {
+            return (Self.formatBareClock(clock.seconds + offset, meridiem: clock.meridiem), .timezone, nil)
+        }
+        // A partial or non-duration operand must not silently turn a valid
+        // clock into an SI quantity while typing (`9pm + 33mi` was 53.11 km).
+        let message = "Use hours, minutes or seconds with a clock time."
+        return (message, .error, message)
+    }
+
+    private static func parseBareClock(_ raw: String) -> (seconds: TimeInterval, meridiem: Bool)? {
+        let ns = raw as NSString
+        guard let match = bareClockRegex?.firstMatch(in: raw, range: NSRange(location: 0, length: ns.length)),
+              let hour = Int(ns.substring(with: match.range(at: 1))) else { return nil }
+        func group(_ index: Int) -> String? {
+            let range = match.range(at: index)
+            return range.location == NSNotFound ? nil : ns.substring(with: range)
+        }
+        let minute = group(3).flatMap(Int.init) ?? 0
+        guard minute < 60 else { return nil }
+        if let meridiem = group(4)?.lowercased() {
+            guard (1...12).contains(hour) else { return nil }
+            let hours = hour % 12 + (meridiem == "pm" ? 12 : 0)
+            return (TimeInterval(hours * 3600 + minute * 60), true)
+        }
+        guard group(2) == ":", hour < 24 else { return nil }
+        return (TimeInterval(hour * 3600 + minute * 60), false)
+    }
+
+    private static func formatBareClock(_ totalSeconds: TimeInterval, meridiem: Bool) -> String {
+        var day = floor(totalSeconds / 86400)
+        var withinDay = totalSeconds.truncatingRemainder(dividingBy: 86400)
+        if withinDay < 0 { withinDay += 86400 }
+        withinDay = (withinDay * 1000).rounded() / 1000
+        if withinDay >= 86400 {
+            withinDay = 0
+            day += 1
+        }
+        let hour = Int(withinDay / 3600)
+        let minute = Int(withinDay.truncatingRemainder(dividingBy: 3600) / 60)
+        let seconds = withinDay.truncatingRemainder(dividingBy: 60)
+        var result = meridiem
+            ? "\(hour % 12 == 0 ? 12 : hour % 12):\(String(format: "%02d", minute))"
+            : String(format: "%02d:%02d", hour, minute)
+        if seconds > 0.000_001 {
+            // Keep seconds when an offset requires them, including fractional
+            // seconds, without turning every result into a second-resolution clock.
+            let value = String(format: "%06.3f", seconds)
+                .replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+            result += ":" + value
+        }
+        if meridiem { result += hour < 12 ? " am" : " pm" }
+        if day != 0 { result += String(format: " (%+.0fd)", day) }
+        return result
+    }
+
     /// Recognise five Numi-style timezone phrases:
     ///   "<TZ> time"
     ///   "Time in <TZ>"
@@ -610,7 +724,7 @@ public final class NumiEngine {
     }
 
     private func extractOneOffset(from line: String) -> (String, TimeInterval, Bool) {
-        let regex = #"^(.+?)\s*([+\-])\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)?$"#
+        let regex = #"(?i)^(.+?)\s*([+\-])\s*(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes|s|sec|secs|second|seconds)?$"#
         let pattern = try? NSRegularExpression(pattern: regex)
         let ns = line as NSString
         guard let result = pattern?.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)),

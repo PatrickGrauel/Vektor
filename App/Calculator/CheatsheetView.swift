@@ -52,7 +52,7 @@ struct CheatsheetView: View {
             Entry(example: "120 kt in km/h",                           detail: "Speed"),
             Entry(example: "60000 ft in m",                            detail: "Length"),
             Entry(example: "180 lbs in kg",                            detail: "Mass"),
-            Entry(example: "100°F in °C",                              detail: "Temperature"),
+            Entry(example: "100 degF in degC",                          detail: "Temperature"),
             Entry(example: "29.92 inHg in hPa",                        detail: "Pressure"),
             Entry(example: "2 hours in seconds",                       detail: "Time"),
             Entry(example: "5400 W * 3 hours in kWh",                  detail: "Mixed-unit arithmetic"),

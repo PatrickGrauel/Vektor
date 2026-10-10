@@ -16,22 +16,22 @@ Vektor: Notepad Calculator
 Menu bar math, units, currency
 ```
 
-## Promotional text — 156/170 characters
+## Promotional text — 151/170 characters
 
 ```text
-Write a calculation, see the answer. Keep project estimates, budgets and conversions in saved sheets, with live currency rates and tools for aviation study.
+Everyday math and pilot study, together. Type calculations, convert currencies and retrieve METAR weather, with aviation tools for study and reference.
 ```
 
-## Keywords — 95/100 bytes
+## Keywords — 87/100 bytes
 
 ```text
-scratchpad,convert,percentage,budget,timezone,notes,variable,offline,finance,aviation,metar,e6b
+convert,percentage,timezone,offline,finance,aviation,metar,e6b,taf,crosswind,zulu,pilot
 ```
 
-## Description — 2493/4000 characters
+## Description — 2538/4000 characters
 
 ```text
-Keep the thought and the calculation on the same page. Vektor is a menu-bar notepad calculator for your Mac: type math beside your notes and see results as you write.
+Keep the thought and the calculation on the same page. Vektor is a menu-bar notepad calculator for your Mac, with aviation tools for study and reference: type math beside your notes and see results as you write.
 
 Estimate a project, split a dinner, convert a measurement, or compare a travel budget. Open Vektor from the menu bar, do the math, and return to your work.
 

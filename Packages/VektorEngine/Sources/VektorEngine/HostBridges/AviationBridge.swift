@@ -6,7 +6,7 @@ import os
 /// Registers aviation-flavoured functions inside math.js so they can be
 /// called from calculator expressions:
 ///
-///   density_altitude(8000, 25, 29.92)      // PA ft, OAT °C, altimeter inHg
+///   density_altitude(8000, 25, 29.92)      // indicated/field elev ft, OAT °C, altimeter inHg
 ///   pressure_altitude(5000, 29.42)         // indicated ft, altimeter inHg
 ///   isa_temp(10000)                        // °C at altitude
 ///   ground_speed(360, 100, 280, 15)        // course, TAS, wind from, wind speed
@@ -19,18 +19,22 @@ public enum AviationBridge {
 
     public static func register(on context: JSContext) {
         // Stage 1: Park Swift closures on a temp JS global.
-        let densityAltitude: @convention(block) (Double, Double, Double) -> Double = { pa, oat, alt in
-            Atmosphere.densityAltitudeFt(indicatedAltitudeFt: pa, altimeterInHg: alt, oatC: oat)
+        // First argument is INDICATED altitude (field elevation with the local
+        // altimeter set); the altimeter setting converts it to pressure altitude.
+        let densityAltitude: @convention(block) (Double, Double, Double) -> Double = { ind, oat, alt in
+            Atmosphere.densityAltitudeFt(indicatedAltitudeFt: ind, altimeterInHg: alt, oatC: oat)
         }
         let pressureAltitude: @convention(block) (Double, Double) -> Double = { ind, alt in
             Atmosphere.pressureAltitudeFt(indicatedAltitudeFt: ind, altimeterInHg: alt)
         }
         let isaTemp: @convention(block) (Double) -> Double = { Atmosphere.isaTempC(altitudeFt: $0) }
         let groundSpeed: @convention(block) (Double, Double, Double, Double) -> Double = { course, tas, wfrom, wspd in
-            E6B.windTriangle(courseDeg: course, tas: tas, windFromDeg: wfrom, windSpeed: wspd).groundSpeed
+            let s = E6B.windTriangle(courseDeg: course, tas: tas, windFromDeg: wfrom, windSpeed: wspd)
+            return s.isSolvable ? s.groundSpeed : .nan
         }
         let heading: @convention(block) (Double, Double, Double, Double) -> Double = { course, tas, wfrom, wspd in
-            E6B.windTriangle(courseDeg: course, tas: tas, windFromDeg: wfrom, windSpeed: wspd).headingDeg
+            let s = E6B.windTriangle(courseDeg: course, tas: tas, windFromDeg: wfrom, windSpeed: wspd)
+            return s.isSolvable ? s.headingDeg : .nan
         }
         let crosswind: @convention(block) (Double, Double, Double) -> Double = { rwy, wfrom, wspd in
             Runway.components(runwayHeadingDeg: rwy, windFromDeg: wfrom, windSpeed: wspd).crosswind
@@ -73,7 +77,7 @@ public enum AviationBridge {
         // We re-wrap each as a JS function whose only job is to forward to _avbridge.
         let importScript = """
         math.import({
-          density_altitude:  function(pa, oat, alt)              { return _avbridge.density_altitude(pa, oat, alt); },
+          density_altitude:  function(ind, oat, alt)             { return _avbridge.density_altitude(ind, oat, alt); },
           pressure_altitude: function(ind, alt)                  { return _avbridge.pressure_altitude(ind, alt); },
           isa_temp:          function(ft)                        { return _avbridge.isa_temp(ft); },
           ground_speed:      function(course, tas, wfrom, wspd)  { return _avbridge.ground_speed(course, tas, wfrom, wspd); },

@@ -40,4 +40,14 @@ public enum Runway {
         guard let n = Int(digits), n >= 1, n <= 36 else { return nil }
         return Double(n) * 10.0
     }
+
+    /// Accept either a runway designator ("27L" → 270, rounded to 10°) or a
+    /// published 3-digit magnetic heading ("273" → 273) for exact components.
+    public static func heading(fromRunwayOrHeading text: String) -> Double? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if t.count == 3, t.allSatisfy(\.isNumber), let h = Int(t), (1...360).contains(h) {
+            return Double(h)
+        }
+        return headingFromRunwayId(t)
+    }
 }

@@ -3,7 +3,7 @@ import StoreKit
 import os
 
 /// Monetisation for Vektor: a single non-consumable unlock (`Vektor Lifetime
-/// Unlock`) gated behind a self-managed 7-day free trial. The whole app is the
+/// Unlock`) gated behind a self-managed 60-day free trial. The whole app is the
 /// product — during the trial everything works; once it lapses (and nothing is
 /// purchased) `PanelRootView` shows the blocking paywall.
 ///
@@ -23,7 +23,7 @@ final class EntitlementManager: ObservableObject {
     static let unlockProductID = "app.vektor.Vektor.unlock"
 
     /// Length of the free trial, in days.
-    static let trialDays = 7
+    static let trialDays = 60
 
     @Published private(set) var isPurchased = false
     @Published private(set) var product: Product?

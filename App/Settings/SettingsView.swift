@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("vektor.menuBarOnly") private var menuBarOnly: Bool = false
     @AppStorage("vektor.fx.showProvenance") private var showFXProvenance: Bool = true
     @AppStorage(DigitGrouping.defaultsKey) private var digitGrouping: Bool = true
+    @AppStorage("vektor.calc.syntaxColoring") private var syntaxColoring: Bool = true
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @AppStorage("vektor.alwaysOnTop") private var alwaysOnTop: Bool = false
     @State private var showDocs: Bool = false
@@ -52,6 +53,8 @@ struct SettingsView: View {
                     Text("Light").tag("light")
                     Text("Dark").tag("dark")
                 }
+                Toggle("Colour calculations", isOn: $syntaxColoring)
+                    .help("Uses blue for variables, violet for units and currencies, and orange for math operators in the calculator editor.")
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, newValue in
                         if !LaunchAtLogin.setEnabled(newValue) {

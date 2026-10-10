@@ -75,7 +75,7 @@ struct PaywallView: View {
         if ent.isTrialActive {
             return "You're on the free trial — \(ent.trialDaysRemaining) day\(ent.trialDaysRemaining == 1 ? "" : "s") left. Unlock once to keep everything, forever."
         }
-        return "Your 7-day free trial has ended. Unlock Vektor with a one-time purchase to keep using it."
+        return "Your \(EntitlementManager.trialDays)-day free trial has ended. Unlock Vektor with a one-time purchase to keep using it."
     }
 
     private var buyTitle: String {

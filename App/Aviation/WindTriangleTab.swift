@@ -7,7 +7,7 @@ struct WindTriangleTab: View {
     @AppStorage("vektor.e6b.wind.windFrom")  private var windFrom: Double = 280
     @AppStorage("vektor.e6b.wind.windSpeed") private var windSpeed: Double = 15
     @AppStorage("vektor.e6b.wind.variation") private var variation: Double = 7    // °W positive
-    @AppStorage("vektor.e6b.wind.deviation") private var deviation: Double = 5    // compass deviation
+    @AppStorage("vektor.e6b.wind.deviation") private var deviation: Double = 0    // °E positive
 
     @AppStorage("vektor.e6b.wind.show.true")    private var showTrue: Bool = true
     @AppStorage("vektor.e6b.wind.show.mag")     private var showMag: Bool = true
@@ -26,28 +26,40 @@ struct WindTriangleTab: View {
             // 1. Inputs first — what the pilot is typing into the calculator.
             Section("Inputs") {
                 NumericField(title: "True Course (TC)",   value: $course,    range: 0...360, suffix: "°")
-                NumericField(title: "True Airspeed (TAS)", value: $tas,      range: 0...500, suffix: "kt")
+                NumericField(title: "True Airspeed (TAS)", value: $tas,      range: 0...600, suffix: "kt")
                 NumericField(title: "Wind from",          value: $windFrom,  range: 0...360, suffix: "°")
-                NumericField(title: "Wind speed",         value: $windSpeed, range: 0...80,  suffix: "kt")
-                NumericField(title: "Mag variation",      value: $variation, range: -30...30,
+                NumericField(title: "Wind speed",         value: $windSpeed, range: 0...250, suffix: "kt")
+                NumericField(title: "Mag variation",      value: $variation, range: -60...60,
                              suffix: variation >= 0 ? "°W" : "°E",
                              format: .number.precision(.fractionLength(0...1)))
-                NumericField(title: "Compass deviation",  value: $deviation, range: -10...10,
+                NumericField(title: "Compass deviation",  value: $deviation, range: -30...30,
                              suffix: deviation >= 0 ? "°E" : "°W",
                              format: .number.precision(.fractionLength(0...1)))
             }
 
             // 2. Result — what the math gives you.
             Section("Result") {
+                if !s.isSolvable {
+                    HStack(spacing: 6) {
+                        StatusBadge(level: .bad)
+                        Text("No solution — the wind component exceeds the true airspeed, so no heading can hold this course.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundStyle(StatusLevel.bad.colour)
+                } else {
                 LabeledContent("Wind Correction (WCA)", value: String(format: "%+.1f°", s.wcaDeg))
                 LabeledContent("True Course (TC)",      value: String(format: "%03.0f°", course))
                 LabeledContent("True Heading (TH)",     value: String(format: "%03.0f°", th))
                 LabeledContent("Magnetic Course (MC)",  value: String(format: "%03.0f°", normalize(course + variation)))
                 LabeledContent("Magnetic Heading (MH)", value: String(format: "%03.0f°", normalize(th + variation)))
-                LabeledContent("Compass Heading (CH)",  value: String(format: "%03.0f°", normalize(th + variation + deviation)))
+                // West is best, East is least: variation is entered +W (added),
+                // deviation is entered +E (subtracted).
+                LabeledContent("Compass Heading (CH)",  value: String(format: "%03.0f°", normalize(th + variation - deviation)))
                 LabeledContent("Ground Speed (GS)",     value: String(format: "%.0f kt", s.groundSpeed))
-                LabeledContent("Headwind",              value: String(format: "%+.0f kt", s.headwind))
+                LabeledContent(s.headwind >= 0 ? "Headwind" : "Tailwind",
+                               value: String(format: "%.0f kt", abs(s.headwind)))
                 LabeledContent("Crosswind",             value: String(format: "%.0f kt %@", abs(s.crosswind), s.crosswind == 0 ? "" : (s.crosswind > 0 ? "(R)" : "(L)")))
+                }
             }
 
             // 3. Graph — the visualisation, plus its own selection bar.
@@ -55,6 +67,7 @@ struct WindTriangleTab: View {
                 visibilityToggles
             }
 
+            if s.isSolvable {
             Section("Diagram") {
                 NavigationFan(
                     course: course, tas: tas, windFromDeg: windFrom, windSpeed: windSpeed,
@@ -67,6 +80,7 @@ struct WindTriangleTab: View {
                 .frame(height: 380)
                 .background(VektorTheme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
             }
         }
         .formStyle(.grouped)
@@ -159,8 +173,11 @@ private struct NavigationFan: View {
 
         // Resolved angles (clockwise from up, in degrees)
         let tNorth: Double = 0
-        let mNorth = variation                       // +°W shifts magnetic CW
-        let cNorth = variation + deviation
+        // Angles are clockwise from true north. Westerly variation (+) puts
+        // magnetic north west of true north (CCW); easterly deviation (+)
+        // puts compass north east of magnetic north (CW).
+        let mNorth = -variation
+        let cNorth = -variation + deviation
         let tc = course
         let th = solution.headingDeg
         let track = course                            // ground track ~= TC (no DA model yet)
@@ -183,6 +200,9 @@ private struct NavigationFan: View {
         }
 
         // ---- 2) North rays + labels ----
+        // Labels splay away from each other: the westernmost north's label
+        // hangs left, the easternmost's right (order depends on VAR/DEV signs).
+        let shownNorths = norths.filter(\.shown).sorted { $0.angle < $1.angle }
         for n in norths where n.shown {
             let tip = polar(ox: ox, oy: oy, r: nLen, deg: n.angle)
             stroke(in: &context,
@@ -190,11 +210,11 @@ private struct NavigationFan: View {
                    color: n.color, width: 1.8)
             arrowhead(in: &context, at: tip,
                       direction: n.angle, color: n.color, size: 7 * scale)
-            let labelOffset = labelOffsetForNorth(key: n.key)
-            let labelPos = CGPoint(x: tip.x + labelOffset.x * scale,
-                                   y: tip.y - 18 * scale)
-            let anchor: UnitPoint = (n.key == "T") ? .trailing
-                                  : (n.key == "C") ? .leading : .center
+            let isWestmost = shownNorths.count > 1 && shownNorths.first?.key == n.key
+            let isEastmost = shownNorths.count > 1 && shownNorths.last?.key == n.key
+            let dx: Double = isWestmost ? -6 : (isEastmost ? 6 : 0)
+            let labelPos = CGPoint(x: tip.x + dx * scale, y: tip.y - 18 * scale)
+            let anchor: UnitPoint = isWestmost ? .trailing : (isEastmost ? .leading : .center)
             drawText(in: &context, at: labelPos, anchor: anchor,
                      n.label, font: .system(size: 13 * scale, weight: .semibold),
                      color: n.color)
@@ -237,8 +257,8 @@ private struct NavigationFan: View {
 
         // ---- 5) Correction indicators (VAR, DEV, WCA) ----
         let corrections: [(label: String, r: Double, a1: Double, a2: Double, labelR: Double)] = [
-            ("VAR", 85,  0,         variation,      108),
-            ("DEV", 120, variation, variation + deviation, 142),
+            ("VAR", 85,  tNorth,    mNorth,         108),
+            ("DEV", 120, mNorth,    cNorth,         142),
             ("WCA", 85,  course,    th,             108),
         ]
         for c in corrections where abs(c.a1 - c.a2) > 0.5 {
@@ -406,14 +426,6 @@ private struct NavigationFan: View {
         for i in 1..<pts.count { p.addLine(to: pts[i]) }
         p.closeSubpath()
         return p
-    }
-
-    private func labelOffsetForNorth(key: String) -> CGPoint {
-        switch key {
-        case "T": return CGPoint(x: -6, y: 0)
-        case "C": return CGPoint(x:  6, y: 0)
-        default:  return .zero
-        }
     }
 
     private func polar(ox: Double, oy: Double, r: Double, deg: Double) -> CGPoint {

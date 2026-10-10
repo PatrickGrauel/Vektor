@@ -56,6 +56,9 @@ struct CalculatorPane: View {
                         },
                         resolvePageReference: { slug in
                             documents.findBySlug(slug) != nil
+                        },
+                        isKnownUnit: { token in
+                            engine?.isKnownDisplayUnit(token) ?? false
                         }
                     )
                     .overlay(alignment: .bottomLeading) { chromeButtons }
@@ -908,6 +911,10 @@ final class AutocompletingTextView: NSTextView {
     var resolvePageReference: ((String) -> Bool)?
 
     func recomputeSuggestion() {
+        guard selectedRange().length == 0, !hasMarkedText() else {
+            updateGhost(nil, isHint: false)
+            return
+        }
         let cursor = selectedRange().location
 
         // 1. Unit-completion ghost wins when one is active — that's a
@@ -994,59 +1001,103 @@ final class AutocompletingTextView: NSTextView {
         let cursor = selectedRange().location
         guard cursor >= 0, cursor <= nsString.length else { return }
 
-        let glyphIndex: Int
-        if cursor < nsString.length {
-            glyphIndex = layoutManager.glyphIndexForCharacter(at: cursor)
-        } else {
-            glyphIndex = layoutManager.numberOfGlyphs
-        }
-
-        let fragment: NSRect
-        let pointInFragment: NSPoint
-
-        if glyphIndex < layoutManager.numberOfGlyphs {
-            fragment = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            pointInFragment = layoutManager.location(forGlyphAt: glyphIndex)
-        } else if layoutManager.numberOfGlyphs > 0 {
-            let lastGlyph = layoutManager.numberOfGlyphs - 1
-            fragment = layoutManager.lineFragmentRect(forGlyphAt: lastGlyph, effectiveRange: nil)
-            let lastLoc = layoutManager.location(forGlyphAt: lastGlyph)
-            let lastBox = layoutManager.boundingRect(
-                forGlyphRange: NSRange(location: lastGlyph, length: 1),
-                in: textContainer
-            )
-            pointInFragment = NSPoint(x: lastLoc.x + lastBox.width, y: lastLoc.y)
-        } else {
-            fragment = layoutManager.extraLineFragmentRect
-            pointInFragment = NSPoint(x: 0, y: 0)
-        }
-
-        let x = fragment.origin.x + pointInFragment.x + textContainerOrigin.x
-        let y = fragment.origin.y + textContainerOrigin.y
+        layoutManager.ensureLayout(for: textContainer)
 
         // Hints render dimmer than completions so the user can tell at a
         // glance "this is a tip, not the system finishing my word." Same
         // typeface and weight; just lower alpha.
         let ghostAlpha: CGFloat = ghostIsHint ? 0.40 : 0.55
         let chipAlpha: CGFloat = ghostIsHint ? 0.55 : 0.70
+        let ghostFont = font ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: font ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+            .font: ghostFont,
+            .paragraphStyle: typingAttributes[.paragraphStyle] as? NSParagraphStyle
+                ?? defaultParagraphStyle ?? NSParagraphStyle.default,
             .foregroundColor: NSColor(VektorTheme.muted).withAlphaComponent(ghostAlpha)
         ]
-        (suggestion as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+
+        // Lay out the ghost with the editor's paragraph metrics. Drawing
+        // an NSString at the line's top uses its natural line height and
+        // puts it above the baseline of our fixed-height editor lines.
+        let ghostStorage = NSTextStorage(string: suggestion, attributes: attrs)
+        // NSLayoutManager does not retain its text storage.
+        defer { withExtendedLifetime(ghostStorage) {} }
+        let ghostLayout = NSLayoutManager()
+        let ghostContainer = NSTextContainer(containerSize: NSSize(
+            width: max(textContainer.containerSize.width,
+                       (suggestion as NSString).size(withAttributes: attrs).width + ghostFont.pointSize * 2),
+            height: CGFloat.greatestFiniteMagnitude
+        ))
+        ghostContainer.lineFragmentPadding = 0
+        ghostStorage.addLayoutManager(ghostLayout)
+        ghostLayout.addTextContainer(ghostContainer)
+        ghostLayout.ensureLayout(for: ghostContainer)
+        guard ghostLayout.numberOfGlyphs > 0 else { return }
+        let ghostFragment = ghostLayout.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+        let firstGhostGlyph = ghostLayout.location(forGlyphAt: 0)
+        let ghostStart = NSPoint(x: ghostFragment.minX + firstGhostGlyph.x,
+                                 y: ghostFragment.minY + firstGhostGlyph.y)
+
+        // Insertion positions include advances, kerning, and tabs. A
+        // glyph's bounding box is not a caret position, especially for
+        // newline glyphs whose box can span the entire remaining line.
+        func insertionPoint(onLineContaining character: Int) -> NSPoint? {
+            let count = layoutManager.getLineFragmentInsertionPoints(
+                forCharacterAt: character, alternatePositions: false,
+                inDisplayOrder: false, positions: nil, characterIndexes: nil
+            )
+            guard count > 0 else { return nil }
+            var positions = Array(repeating: CGFloat.zero, count: count)
+            var indexes = Array(repeating: 0, count: count)
+            layoutManager.getLineFragmentInsertionPoints(
+                forCharacterAt: character, alternatePositions: false,
+                inDisplayOrder: false, positions: &positions, characterIndexes: &indexes
+            )
+            guard let index = indexes.firstIndex(of: cursor) else { return nil }
+            let glyph = layoutManager.glyphIndexForCharacter(at: character)
+            let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            let baseline = layoutManager.location(forGlyphAt: glyph).y
+            return NSPoint(x: fragment.minX + positions[index], y: fragment.minY + baseline)
+        }
+
+        let caret: NSPoint
+        if cursor == nsString.length,
+           layoutManager.extraLineFragmentTextContainer === textContainer,
+           layoutManager.extraLineFragmentRect.height > 0 {
+            // An empty document or a final newline has no glyph for its
+            // caret. Use the extra line and the ghost's native baseline.
+            let fragment = layoutManager.extraLineFragmentRect
+            caret = NSPoint(x: fragment.minX + ghostStart.x,
+                            y: fragment.minY + ghostStart.y)
+        } else if selectionAffinity == .upstream, cursor > 0,
+                  let point = insertionPoint(onLineContaining: cursor - 1) {
+            caret = point
+        } else if nsString.length > 0,
+                  let point = insertionPoint(onLineContaining: min(cursor, nsString.length - 1)) {
+            caret = point
+        } else {
+            return
+        }
+        let x = caret.x + textContainerOrigin.x
+        let baseline = caret.y + textContainerOrigin.y
+        ghostLayout.drawGlyphs(
+            forGlyphRange: NSRange(location: 0, length: ghostLayout.numberOfGlyphs),
+            at: NSPoint(x: x - ghostStart.x, y: baseline - ghostStart.y)
+        )
 
         let chipFont = NSFont.monospacedSystemFont(ofSize: 9, weight: .medium)
         let chipAttrs: [NSAttributedString.Key: Any] = [
             .font: chipFont,
             .foregroundColor: NSColor(VektorTheme.muted).withAlphaComponent(chipAlpha)
         ]
-        let ghostSize = (suggestion as NSString).size(withAttributes: attrs)
+        let ghostWidth = ghostLayout.usedRect(for: ghostContainer).maxX - ghostStart.x
         // Different chip label: ↩ = "press Return to accept this completion",
         // ⇥ try = "press Tab to drop this demo in" — Return on a hint
         // keeps its newline meaning instead.
         let chip = ghostIsHint ? "  ⇥ try" : "  ↩"
         (chip as NSString).draw(
-            at: NSPoint(x: x + ghostSize.width, y: y + 2),
+            at: NSPoint(x: x + ghostWidth,
+                        y: baseline - layoutManager.defaultBaselineOffset(for: chipFont)),
             withAttributes: chipAttrs
         )
     }
