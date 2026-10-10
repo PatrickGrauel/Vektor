@@ -22,6 +22,29 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(TimezoneBridge.resolve("Tokyo")?.identifier, "Asia/Tokyo")
     }
 
+    /// Regression: a trailing "time" ("berlin time") used to make the parser
+    /// take "time" as the source city and show "Resolving…" forever.
+    func testConversionIgnoresTrailingTimeWord() throws {
+        let engine = try NumiEngine()
+        let expected = engine.evaluate("5pm Berlin in Paris").first?.value
+        XCTAssertNotNil(expected)
+        XCTAssertFalse(expected?.hasPrefix("Resolving") ?? true)
+        for line in ["5pm berlin time in paris",
+                     "5pm berlin time in paris time",
+                     "5pm Berlin in Paris time"] {
+            XCTAssertEqual(engine.evaluate(line).first?.value, expected, line)
+        }
+        let tokyo = engine.evaluate("17:00 berlin time in tokyo").first?.value ?? ""
+        XCTAssertTrue(tokyo.contains("GMT+9"), tokyo)
+    }
+
+    func testTimeAtZoneIgnoresTrailingTimeWord() throws {
+        let engine = try NumiEngine()
+        XCTAssertEqual(engine.evaluate("5pm berlin time").first?.value,
+                       engine.evaluate("5pm Berlin").first?.value)
+        XCTAssertFalse(engine.evaluate("5pm berlin time").first?.value?.hasPrefix("Resolving") ?? true)
+    }
+
     func testEngineTimezoneNow() throws {
         let engine = try NumiEngine()
         let results = engine.evaluate("Berlin time")

@@ -263,6 +263,57 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func menuPreferences() {
+        showSettings()
+    }
+
+    /// Open Settings on the Space the user is looking at, above the panel.
+    ///
+    /// SwiftUI's Settings window is an ordinary window: once created it
+    /// stays on the Space it was first opened on, while the calculator panel
+    /// joins every Space. Without this, clicking the gear on another Space
+    /// ordered Settings front back on its original Space — out of sight.
+    /// `.moveToActiveSpace` makes ordering-front pull it here instead.
+    func showSettings() {
+        settingsWindows().forEach(Self.prepareSettingsWindow)
+        openSettingsWindow()
+        // SwiftUI creates the window lazily on first open, after this
+        // returns; configure + raise it once it exists.
+        for delay in [0.0, 0.05, 0.25] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.raiseSettingsWindows()
+            }
+        }
+    }
+
+    /// Set by `SettingsWindowRegistrar` from inside the Settings scene, so we
+    /// don't depend on SwiftUI's private window identifier.
+    weak var settingsWindow: NSWindow? {
+        didSet { settingsWindow.map(Self.prepareSettingsWindow) }
+    }
+
+    private func settingsWindows() -> [NSWindow] {
+        settingsWindow.map { [$0] } ?? []
+    }
+
+    static func prepareSettingsWindow(_ window: NSWindow) {
+        // `.moveToActiveSpace` and `.canJoinAllSpaces` are mutually exclusive.
+        window.collectionBehavior.remove(.canJoinAllSpaces)
+        window.collectionBehavior.insert([.moveToActiveSpace, .fullScreenAuxiliary])
+    }
+
+    private func raiseSettingsWindows() {
+        // Match the panel's level so Always-on-Top doesn't bury Settings
+        // beneath the calculator; ordered later, it sits on top.
+        let level: NSWindow.Level = UserDefaults.standard.bool(forKey: "vektor.alwaysOnTop") ? .floating : .normal
+        for window in settingsWindows() where window.isVisible {
+            Self.prepareSettingsWindow(window)
+            window.level = level
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
+    }
+
+    private func openSettingsWindow() {
         NSApp.activate(ignoringOtherApps: true)
         // Prefer the SwiftUI-native action that the panel's SettingsBridge
         // wired up. It Just Works across macOS releases. Fall back to the
@@ -426,5 +477,19 @@ private struct SettingsBridge: View {
             .onAppear {
                 MenuBarController.shared.openSettingsAction = { openSettings() }
             }
+    }
+}
+
+/// Hands the Settings scene's NSWindow to MenuBarController the moment the
+/// view lands in it (see `MenuBarController.showSettings`).
+struct SettingsWindowRegistrar: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { RegistrarView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class RegistrarView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { MenuBarController.shared.settingsWindow = window }
+        }
     }
 }

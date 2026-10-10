@@ -39,6 +39,15 @@ struct VektorApp: App {
             SettingsView()
                 .environmentObject(AppModel.shared)
                 .environmentObject(EntitlementManager.shared)
+                .background(SettingsWindowRegistrar())
+        }
+        .commands {
+            // ⌘, goes through the same path as the gear, so Settings opens
+            // on the current Space instead of wherever it was last shown.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { MenuBarController.shared.showSettings() }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }

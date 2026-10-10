@@ -780,16 +780,24 @@ public final class NumiEngine {
             }
         }
         let timeStr = pieces.prefix(timeEnd).joined(separator: " ")
+        // "5pm berlin time": the trailing "time" is filler, not part of the place.
         let tzStr = pieces.dropFirst(timeEnd).joined(separator: " ")
+            .replacingOccurrences(of: #"(?i)\s+time$"#, with: "", options: .regularExpression)
         // Only succeed if the TZ resolves — otherwise let the line fall through.
         guard !tzStr.isEmpty,
               (CityResolver.shared.cached(for: tzStr) != nil
-               || TimezoneBridge().legacyResolveLocal(tzStr) != nil)
+               || TimezoneBridge().resolveSync(tzStr) != nil)
         else { return nil }
         return (timeStr, tzStr)
     }
 
-    private func parseConversionForm(_ line: String) -> Conversion? {
+    private func parseConversionForm(_ rawLine: String) -> Conversion? {
+        // "berlin time" / "paris time" — the trailing "time" is filler, not
+        // part of the place name. Left in, the split below fell back to
+        // treating "time" itself as the source city and geocoded it forever.
+        let line = rawLine
+            .replacingOccurrences(of: #"(?i)\s+time(?=\s+in\s)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)(\sin\s+.+?)\s+time$"#, with: "$1", options: .regularExpression)
         // Accept either "HH:mm[ am/pm]" or 4-digit military like "1430".
         let regex = #"^(\d{1,4}(?::\d{2})?(?:\s?[AaPp][Mm])?)\s+(.+?)\s+in\s+(.+)$"#
         guard let _ = line.range(of: regex, options: .regularExpression) else { return nil }
@@ -867,8 +875,10 @@ public final class NumiEngine {
 
     private func resolveNow(id raw: String, offsetSeconds: TimeInterval = 0) -> String? {
         if let out = timezone.nowString(in: raw, offsetSeconds: offsetSeconds) { return decorate(out) }
+        let place = raw.trimmingCharacters(in: .whitespaces)
+        if CityResolver.shared.lookupFailed(for: place) { return "Unknown place: \(place)" }
         kickOffResolve(raw)
-        return "Resolving \(raw.trimmingCharacters(in: .whitespaces))…"
+        return "Resolving \(place)…"
     }
 
     /// Format `time` in `zone`'s timezone, applying any offset, returning a
@@ -879,6 +889,7 @@ public final class NumiEngine {
                                                 offsetSeconds: offsetSeconds) {
             return decorate(out)
         }
+        if CityResolver.shared.lookupFailed(for: zone) { return "Unknown place: \(zone)" }
         kickOffResolve(zone)
         return "Resolving \(zone)…"
     }
@@ -889,12 +900,15 @@ public final class NumiEngine {
                                                 offsetSeconds: offsetSeconds) {
             return decorate(out)
         }
-        kickOffResolve(from)
-        kickOffResolve(to)
-        let need = [from, to]
-            .filter { CityResolver.shared.cached(for: $0) == nil && TimezoneBridge().legacyResolveLocal($0) == nil }
-            .joined(separator: ", ")
-        return "Resolving \(need)…"
+        let unresolved = [from, to]
+            .filter { TimezoneBridge().resolveSync($0) == nil }
+        let failed = unresolved.filter { CityResolver.shared.lookupFailed(for: $0) }
+        if !failed.isEmpty { return "Unknown place: \(failed.joined(separator: ", "))" }
+        // Both places known, yet no conversion: the time itself didn't parse.
+        // Never show an empty, never-ending "Resolving …".
+        if unresolved.isEmpty { return "Can't read time: \(time)" }
+        unresolved.forEach(kickOffResolve)
+        return "Resolving \(unresolved.joined(separator: ", "))…"
     }
 
     private func decorate(_ out: TimezoneBridge.Output) -> String {

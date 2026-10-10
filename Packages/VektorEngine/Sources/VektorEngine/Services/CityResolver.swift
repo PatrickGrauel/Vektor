@@ -107,7 +107,17 @@ public actor CityResolver {
         // to similarly-spelled place names. See doc comment above.
         if TimezoneBridge().legacyResolveLocal(raw) != nil { return nil }
 
-        guard let geo = await geocode(query: raw) else { return nil }
+        let lookup = await geocodeDetailed(query: raw)
+        guard let geo = lookup.resolved else {
+            // Record a definite miss and re-evaluate so lines waiting on this
+            // place switch from "Resolving…" to "Unknown place". Network
+            // errors aren't recorded, so the next edit retries.
+            if lookup.definiteMiss { Self.failedTimezones.insert(key) }
+            await MainActor.run {
+                NotificationCenter.default.post(name: Self.notificationName, object: nil)
+            }
+            return nil
+        }
         dynamicCache[key] = geo
         Self.synchronousCacheSnapshot.set(key, geo)
         persistCache()
@@ -165,6 +175,12 @@ public actor CityResolver {
 
     private static let locationPrefix = "LOC|"
     private static let failedLocations = SyncSet()
+    private static let failedTimezones = SyncSet()
+
+    /// True once a timezone geocode for `raw` has failed this session.
+    public nonisolated func lookupFailed(for raw: String) -> Bool {
+        Self.failedTimezones.contains(normalize(raw))
+    }
 
     // MARK: - Internals
 
@@ -173,11 +189,17 @@ public actor CityResolver {
     private static let synchronousCacheSnapshot = SyncSnapshot()
 
     private func geocode(query: String) async -> Resolved? {
+        await geocodeDetailed(query: query).resolved
+    }
+
+    /// `definiteMiss` is true only when the geocoder answered "no such
+    /// place" — not when offline or rate-limited, which should be retried.
+    private func geocodeDetailed(query: String) async -> (resolved: Resolved?, definiteMiss: Bool) {
         let geocoder = CLGeocoder()
         do {
             let placemarks = try await geocoder.geocodeAddressString(query)
             guard let placemark = placemarks.first,
-                  let tz = placemark.timeZone else { return nil }
+                  let tz = placemark.timeZone else { return (nil, true) }
             let parts: [String?] = [
                 placemark.locality,
                 placemark.subAdministrativeArea,
@@ -193,10 +215,10 @@ public actor CityResolver {
                 name = nameParts[0]
             }
             let coord = placemark.location?.coordinate
-            return Resolved(canonicalName: name, timezoneId: tz.identifier, originalCode: nil,
-                            latitude: coord?.latitude, longitude: coord?.longitude)
+            return (Resolved(canonicalName: name, timezoneId: tz.identifier, originalCode: nil,
+                             latitude: coord?.latitude, longitude: coord?.longitude), false)
         } catch {
-            return nil
+            return (nil, (error as? CLError)?.code == .geocodeFoundNoResult)
         }
     }
 

@@ -7,7 +7,6 @@ struct CalculatorPane: View {
     let engine: NumiEngine?
     let error: String?
     @ObservedObject var documents: DocumentStore
-    @Environment(\.openSettings) private var openSettings
     @EnvironmentObject private var calculatorBridge: CalculatorBridge
     @EnvironmentObject private var model: AppModel
 
@@ -216,7 +215,7 @@ struct CalculatorPane: View {
     private var chromeButtons: some View {
         HStack(spacing: 0) {
             Button {
-                openSettings()
+                MenuBarController.shared.showSettings()
             } label: {
                 Image(systemName: "gearshape")
                     .imageScale(.medium)
