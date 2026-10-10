@@ -311,7 +311,8 @@ final class DocumentStore: ObservableObject {
         # Time and dates
         Berlin time
         1430 Zulu in HKT
-        today
+        today + 2 weeks
+        sun Munich                       // sunrise and sunset in local time
 
         # Reuse numbers
         // Change rent below to update the yearly total too.
@@ -472,6 +473,8 @@ final class DocumentStore: ObservableObject {
 
         # The basics
         today
+        today + 2 weeks                  // a date fourteen days from now
+        2026-12-25 - 30 days              // count back from a date
         days between today and 2026-12-25
         age 1990-03-15                   // your age right now, by year
         weekday 2026-07-04               // what day of the week is the 4th?

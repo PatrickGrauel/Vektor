@@ -80,7 +80,9 @@ struct CheatsheetView: View {
             Entry(example: "3725 in seconds",                          detail: "h/min/sec breakdown"),
         ]),
         Section(title: "Dates", entries: [
-            Entry(example: "today",                                    detail: "ISO date for today"),
+            Entry(example: "today",                                    detail: "Today's date"),
+            Entry(example: "today + 2 weeks",                          detail: "Add or subtract calendar days, weeks, months or years"),
+            Entry(example: "2026-12-25 - 30 days",                      detail: "Count back from a date"),
             Entry(example: "days between today and 2027-01-01",        detail: "Calendar-days difference"),
             Entry(example: "business days between today and 2027-01-01", detail: "Mon–Fri only (Sat/Sun excluded)"),
             Entry(example: "age 1990-03-15",                           detail: "Age in years right now"),

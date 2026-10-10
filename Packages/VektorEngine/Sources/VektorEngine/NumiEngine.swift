@@ -386,6 +386,14 @@ public final class NumiEngine {
                 results.append(.init(line: idx, raw: raw, value: day, kind: .expression))
                 continue
             }
+            // A date-shaped input belongs to calendar arithmetic even when
+            // invalid or incomplete. Otherwise math.js treats ISO hyphens
+            // as subtraction and can silently return a numeric quantity.
+            if Self.isDateArithmeticLine(trimmed) {
+                let message = "Use a valid date and whole days, weeks, months or years."
+                results.append(.init(line: idx, raw: raw, value: message, kind: .error, hint: message))
+                continue
+            }
 
             let prep = preprocessor.transform(raw,
                                               previousValues: previousValues,
@@ -1643,12 +1651,9 @@ public final class NumiEngine {
         }
     }
 
-    // MARK: - Sun events
+    // MARK: - Calendar dates
 
-    /// Recognise `sun EDDM` and return SR / SS / civil-twilight-end
-    /// for today at that airport. Returns nil if the line doesn't match.
-    ///
-    /// Standalone date keywords + `weekday DATE`. Returns formatted
+    /// Date keywords, calendar arithmetic and `weekday DATE`. Returns formatted
     /// date strings that math.js can't chew on, so they're handled
     /// here before the preprocessor gets a chance to mangle them.
     /// `now` is intentionally NOT handled here — it's already
@@ -1661,67 +1666,117 @@ public final class NumiEngine {
     ///   • `yesterday`          → "Sun, 17 May 2026"
     ///   • `weekday 2026-07-04` → "Saturday"
     ///   • `weekday today`      → today's weekday name
-    static func handleDateKeywordLine(_ line: String) -> String? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces).lowercased()
-        let cal = Calendar(identifier: .gregorian)
-        let now = Date()
+    ///   • `today + 2 weeks`    → the date fourteen calendar days from today
+    ///   • `2026-12-25 - 30 days` → the date thirty calendar days earlier
+    static func handleDateKeywordLine(_ line: String,
+                                      now: Date = Date(),
+                                      calendar: Calendar = Calendar(identifier: .gregorian)) -> String? {
+        let trimmed = dateExpressionBody(line)
 
         let dateFmt: DateFormatter = {
             let f = DateFormatter()
-            f.dateFormat = "EEE, d MMM yyyy"
             f.locale = Locale(identifier: "en_US_POSIX")
+            f.calendar = calendar
+            f.timeZone = calendar.timeZone
+            f.dateFormat = "EEE, d MMM yyyy"
             return f
         }()
         let weekdayFmt: DateFormatter = {
             let f = DateFormatter()
-            f.dateFormat = "EEEE"
             f.locale = Locale(identifier: "en_US_POSIX")
+            f.calendar = calendar
+            f.timeZone = calendar.timeZone
+            f.dateFormat = "EEEE"
             return f
         }()
 
-        switch trimmed {
-        case "today":     return dateFmt.string(from: cal.startOfDay(for: now))
-        case "tomorrow":  return dateFmt.string(from: cal.date(byAdding: .day, value: 1, to: now) ?? now)
-        case "yesterday": return dateFmt.string(from: cal.date(byAdding: .day, value: -1, to: now) ?? now)
-        default: break
+        if ["today", "tomorrow", "yesterday"].contains(trimmed),
+           let date = resolveDateToken(trimmed, now: now, calendar: calendar) {
+            return dateFmt.string(from: date)
         }
 
         // weekday <date> — accept ISO `yyyy-MM-dd` or any of the
         // four date keywords as the operand.
         let weekdayRegex = #"^weekday\s+(\S+)$"#
         if let re = try? NSRegularExpression(pattern: weekdayRegex, options: [.caseInsensitive]),
-           let m = re.firstMatch(in: line,
-                                 range: NSRange(location: 0, length: (line as NSString).length)),
+           let m = re.firstMatch(in: trimmed,
+                                 range: NSRange(location: 0, length: (trimmed as NSString).length)),
            m.numberOfRanges >= 2 {
-            let token = (line as NSString).substring(with: m.range(at: 1))
-            if let date = resolveDateToken(token) {
+            let token = (trimmed as NSString).substring(with: m.range(at: 1))
+            if let date = resolveDateToken(token, now: now, calendar: calendar) {
                 return weekdayFmt.string(from: date)
             }
         }
-        return nil
+
+        let arithmeticRegex = #"^(today|tomorrow|yesterday|\d{4}-\d{2}-\d{2})\s*([+-])\s*(\d+)\s*(days?|weeks?|months?|years?)$"#
+        let ns = trimmed as NSString
+        guard let re = try? NSRegularExpression(pattern: arithmeticRegex),
+              let match = re.firstMatch(in: trimmed, range: NSRange(location: 0, length: ns.length)),
+              let date = resolveDateToken(ns.substring(with: match.range(at: 1)), now: now, calendar: calendar),
+              let amount = Int(ns.substring(with: match.range(at: 3))) else { return nil }
+
+        let component: Calendar.Component
+        let limit: Int
+        switch ns.substring(with: match.range(at: 4)) {
+        case "day", "days":     (component, limit) = (.day, 3_652_425)
+        case "week", "weeks":   (component, limit) = (.weekOfYear, 521_775)
+        case "month", "months": (component, limit) = (.month, 119_988)
+        default:                (component, limit) = (.year, 9_999)
+        }
+        // Bound offsets to the supported four-digit calendar range before
+        // asking Foundation to add them; very large integers must not wrap.
+        guard amount <= limit else { return nil }
+        let signedAmount = ns.substring(with: match.range(at: 2)) == "-" ? -amount : amount
+        guard let result = calendar.date(byAdding: component, value: signedAmount, to: date),
+              calendar.component(.era, from: result) == 1,
+              (1...9999).contains(calendar.component(.year, from: result)) else { return nil }
+        return dateFmt.string(from: result)
     }
 
-    /// Same `today` / `tomorrow` / `yesterday` / `yyyy-MM-dd` token
-    /// vocabulary used by NumiPreprocessor.parseDateToken, hoisted
-    /// here so the engine-level handlers can resolve operands
-    /// without duplicating parser logic.
-    private static func resolveDateToken(_ raw: String) -> Date? {
+    private static func isDateArithmeticLine(_ line: String) -> Bool {
+        dateExpressionBody(line).range(
+            of: #"^(?:today|tomorrow|yesterday|\d{4}-\d{2}-\d{2})\s*[+-]"#,
+            options: .regularExpression) != nil
+    }
+
+    private static func dateExpressionBody(_ line: String) -> String {
+        var body = line.trimmingCharacters(in: .whitespaces).lowercased()
+        // Preserve the same labels and inline notes as ordinary calculations.
+        if let colon = body.firstIndex(of: ":"),
+           body[..<colon].allSatisfy({ $0.isLetter || $0 == " " || $0 == "_" || $0 == "-" }),
+           !body[..<colon].trimmingCharacters(in: .whitespaces).isEmpty {
+            body = String(body[body.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+        }
+        if let note = body.range(of: #"\s+(?://|")"#, options: .regularExpression) {
+            body = String(body[..<note.lowerBound]).trimmingCharacters(in: .whitespaces)
+        }
+        return body.replacingOccurrences(of: "−", with: "-")
+    }
+
+    /// Treat ISO tokens as calendar dates in the same timezone as relative
+    /// dates, so a date never shifts to the preceding day west of UTC.
+    private static func resolveDateToken(_ raw: String, now: Date, calendar: Calendar) -> Date? {
         let t = raw.trimmingCharacters(in: .whitespaces).lowercased()
-        let cal = Calendar(identifier: .gregorian)
-        let now = Date()
         switch t {
-        case "today", "now":   return cal.startOfDay(for: now)
-        case "yesterday":      return cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: now))
-        case "tomorrow":       return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now))
+        case "today", "now":   return calendar.startOfDay(for: now)
+        case "yesterday":      return calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now))
+        case "tomorrow":       return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))
         default:
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = TimeZone(identifier: "UTC")
-            f.dateFormat = "yyyy-MM-dd"
-            return f.date(from: raw)
+            guard t.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
+            let parts = t.split(separator: "-").compactMap { Int($0) }
+            guard parts.count == 3, (1...9999).contains(parts[0]) else { return nil }
+            let components = DateComponents(year: parts[0], month: parts[1], day: parts[2])
+            guard let date = calendar.date(from: components) else { return nil }
+            let actual = calendar.dateComponents([.year, .month, .day], from: date)
+            guard actual.year == parts[0], actual.month == parts[1], actual.day == parts[2] else { return nil }
+            return date
         }
     }
 
+    // MARK: - Sun events
+
+    /// Recognise `sun EDDM` and return sunrise, sunset and civil-twilight-end
+    /// for today at that airport. Returns nil if the line doesn't match.
     /// Multi-ICAO is supported: `sun EDDM EDMA EDMO` returns one line
     /// per airport so the pilot can compare daylight windows along a
     /// route.
