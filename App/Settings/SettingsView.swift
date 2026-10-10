@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @AppStorage("vektor.alwaysOnTop") private var alwaysOnTop: Bool = false
     @State private var showDocs: Bool = false
+    @State private var showLicenses: Bool = false
 
     // Units (preferences shared across all panes that care)
     @AppStorage("vektor.aviation.speedUnit")    private var speedUnit: String = "kt"
@@ -90,15 +91,23 @@ struct SettingsView: View {
                         .foregroundStyle(ent.isPurchased ? Color.green : .secondary)
                 }
                 if !ent.isPurchased {
+                    Text("60 days free, then a one-time lifetime unlock through the App Store. No subscription or automatic charge.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Button {
                         Task { await ent.purchase() }
                     } label: {
-                        Text(ent.product.map { "Unlock — \($0.displayPrice)" } ?? "Unlock")
+                        Text(ent.product.map { "Unlock for life — \($0.displayPrice)" } ?? "Unlock for life")
                     }
-                    .disabled(ent.purchaseInFlight || ent.product == nil)
+                    .disabled(ent.isBusy || ent.accessState == .checking || ent.product == nil)
                 }
-                Button("Restore Purchase") { Task { await ent.restore() } }
-                    .disabled(ent.purchaseInFlight)
+                Button(ent.restoreInFlight ? "Restoring purchases…" : "Restore Purchases") { Task { await ent.restore() } }
+                    .disabled(ent.isBusy)
+                if ent.isLoadingProducts {
+                    ProgressView("Loading App Store prices…").controlSize(.small)
+                } else if ent.product == nil {
+                    Button("Retry App Store connection") { Task { await ent.loadProduct() } }
+                        .disabled(ent.isBusy)
+                }
                 if let err = ent.lastErrorMessage {
                     Text(err).font(.caption).foregroundStyle(.red)
                 }
@@ -144,14 +153,15 @@ struct SettingsView: View {
                     } label: {
                         Label("Documentation", systemImage: "book")
                     }
-                    Button("Send feedback") {
-                        if let url = URL(string: "mailto:feedback@vektor.app?subject=Vektor%20feedback") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
+                    Link("Support", destination: ReleaseLinks.support)
                     Spacer()
                     Text("Vektor \(Bundle.main.shortVersion) (\(Bundle.main.buildVersion))")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Link("Privacy policy", destination: ReleaseLinks.privacy)
+                    Link("Terms", destination: ReleaseLinks.terms)
+                    Button("Open-source licenses") { showLicenses = true }
                 }
             }
         }
@@ -165,6 +175,9 @@ struct SettingsView: View {
         .background(WindowLevelApplier(alwaysOnTop: alwaysOnTop))
         .sheet(isPresented: $showDocs) {
             DocumentationView()
+        }
+        .sheet(isPresented: $showLicenses) {
+            LicensesView()
         }
     }
 }

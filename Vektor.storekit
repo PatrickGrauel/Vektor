@@ -1,32 +1,47 @@
 {
-  "identifier" : "5C7E2A10-1F2B-4C3D-9E4F-VEKTORUNLOCK1",
-  "nonRenewingSubscriptions" : [],
-  "products" : [
+  "identifier": "5C7E2A10-1F2B-4C3D-9E4F-3F5CA7D9B6D1",
+  "nonRenewingSubscriptions": [],
+  "products": [
     {
-      "displayPrice" : "9.99",
-      "familyShareable" : false,
-      "internalID" : "A1B2C3D4-0001-4000-8000-VEKTORUNLOCK",
-      "localizations" : [
+      "displayPrice": "0.00",
+      "familyShareable": false,
+      "internalID": "6E47E614-39CB-4C95-8422-B4CF271038FD",
+      "localizations": [
         {
-          "description" : "Unlock the full Vektor Calculator forever with a one-time purchase.",
-          "displayName" : "Vektor Lifetime Unlock",
-          "locale" : "en_US"
+          "description": "Try all Vektor tools free for 60 days. A separate one-time purchase is required after the trial. No automatic charge.",
+          "displayName": "60-day Trial",
+          "locale": "en_US"
         }
       ],
-      "productID" : "app.vektor.Vektor.unlock",
-      "referenceName" : "Vektor Lifetime Unlock",
-      "type" : "NonConsumable"
+      "productID": "app.vektor.Vektor.trial60",
+      "referenceName": "60-day Trial",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "25.00",
+      "familyShareable": false,
+      "internalID": "A1B2C3D4-0001-4000-8000-122B9B94F67A",
+      "localizations": [
+        {
+          "description": "Unlock the full Vektor Calculator forever with a one-time purchase.",
+          "displayName": "Vektor Lifetime Unlock",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "app.vektor.Vektor.unlock",
+      "referenceName": "Vektor Lifetime Unlock",
+      "type": "NonConsumable"
     }
   ],
-  "settings" : {
-    "_applicationInternalID" : "6778571085",
-    "_developerTeamID" : "334ZBC7GBZ",
-    "_failTransactionsEnabled" : false,
-    "_storeKitErrors" : []
+  "settings": {
+    "_applicationInternalID": "6778571085",
+    "_developerTeamID": "334ZBC7GBZ",
+    "_failTransactionsEnabled": false,
+    "_storeKitErrors": []
   },
-  "subscriptionGroups" : [],
-  "version" : {
-    "major" : 3,
-    "minor" : 0
+  "subscriptionGroups": [],
+  "version": {
+    "major": 3,
+    "minor": 0
   }
 }

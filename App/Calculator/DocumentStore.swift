@@ -245,6 +245,13 @@ final class DocumentStore: ObservableObject {
     private var persistTask: Task<Void, Never>?
     private static let persistDebounce: Duration = .milliseconds(400)
 
+    /// Preserve the last typing burst when the editor is removed, including
+    /// when a trial expires before its delayed save runs.
+    func flushPendingChanges() {
+        guard persistTask != nil else { return }
+        persist()
+    }
+
     private func schedulePersist() {
         persistTask?.cancel()
         persistTask = Task { [weak self] in

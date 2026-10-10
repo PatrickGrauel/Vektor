@@ -1,10 +1,12 @@
-# Vektor End User License Agreement
+# Vektor custom End User License Agreement — draft
 
-_Last updated: May 15, 2026_
+_Last updated: October 11, 2026_
+
+**Release status:** The Mac App Store release uses [Apple's standard EULA](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) unless a completed custom agreement is explicitly selected in App Store Connect. This document is a custom-agreement draft, not an active replacement. It needs the developer address and contact details required by Apple before adoption.
 
 This End User License Agreement ("EULA") is a binding agreement between you and Patrick Grauel ("Licensor"), the developer of Vektor (the "Licensed Application"). By installing or using the Licensed Application you agree to be bound by this EULA. **If you do not agree, do not install or use the Licensed Application.**
 
-This EULA replaces the Apple Inc. "Licensed Application End User License Agreement" for purposes of the Licensed Application.
+If this completed custom EULA is adopted in App Store Connect for your country or region, it replaces Apple's standard Licensed Application End User License Agreement there. Otherwise, Apple's standard agreement applies.
 
 ## 1. Acknowledgement
 
@@ -22,7 +24,7 @@ You may not:
 
 ## 3. Consent to use of data
 
-Licensor does not collect or transmit data about your use of the Licensed Application. The Licensed Application stores documents, settings, cached responses, and any API keys you elect to provide entirely on your device, inside the application's sandbox container.
+Licensor does not collect or transmit data about your use of the Licensed Application. The Licensed Application stores documents, settings and cached responses in its local preferences and sandbox container. Optional API keys are stored separately in the macOS Keychain and sent to the provider that issued them when required. Apple processes trial and lifetime-unlock purchases through StoreKit.
 
 When you use a feature that requires data from a third party (e.g. live weather, currency rates, financial statements), the Licensed Application transmits only the minimum information necessary to that specific third party, as described in the Vektor Privacy Policy. The Licensed Application does not retain or re-transmit those requests centrally.
 
@@ -76,7 +78,7 @@ You represent and warrant that (i) you are not located in a country that is subj
 
 ## 12. Third-party terms of agreement
 
-You must comply with applicable third-party terms of agreement when using the Licensed Application — including, without limitation, the terms of service of Financial Modeling Prep (if you provide a key for the Stocks feature), OpenExchangeRates (if you provide a key for currency conversion), and the third-party data providers identified in the Vektor Privacy Policy.
+You must comply with applicable third-party terms of agreement when using the Licensed Application — including, without limitation, the terms of service of Financial Modeling Prep (if you provide a key for the Stocks feature), OpenExchangeRates (if you provide a key for currency conversion), and the third-party data providers identified in the Vektor Privacy Policy. Calendar events you choose to create are saved to your selected calendar, which may sync through its provider according to your account settings.
 
 ## 13. Third-party beneficiary
 

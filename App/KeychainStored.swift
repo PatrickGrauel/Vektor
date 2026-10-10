@@ -69,7 +69,7 @@ private final class KeychainStore: ObservableObject {
 
     func update(_ new: String) {
         guard new != value else { return }
-        KeychainStorage.set(new, for: key)
+        guard KeychainStorage.set(new, for: key) else { return }
         value = new
         // KeychainStorage.set posts changeNotification — sibling
         // KeychainStore instances will pick it up, but our own

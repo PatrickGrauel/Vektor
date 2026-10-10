@@ -28,5 +28,7 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Patrick Grauel</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Vektor uses calendar access to list your calendars and save the events you choose to add from the time-zone planner.</string>
 </dict>
 </plist>

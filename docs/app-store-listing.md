@@ -28,7 +28,7 @@ Everyday math and pilot study, together. Type calculations, convert currencies a
 convert,percentage,timezone,offline,finance,aviation,metar,e6b,taf,crosswind,zulu,pilot
 ```
 
-## Description — 2538/4000 characters
+## Description — 2795/4000 characters
 
 ```text
 Keep the thought and the calculation on the same page. Vektor is a menu-bar notepad calculator for your Mac, with aviation tools for study and reference: type math beside your notes and see results as you write.
@@ -71,6 +71,10 @@ KEEP YOUR WORK LOCAL
 
 No Vektor account is required. There are no analytics or ads in the app. Sheets and settings are stored on your Mac. Live features contact third-party services; rate refreshes can run at launch and in the background. Optional API keys are stored in the macOS Keychain and sent to their respective providers.
 
+TRY IT FOR 60 DAYS
+
+Start a 60-day free trial through Apple's purchase sheet. It does not renew or charge automatically. After the trial, a one-time in-app purchase unlocks continued access to Vektor's calculator and tools. No subscription. Your saved sheets remain on your Mac.
+
 Requires macOS 14 Sonoma or later. Internet access is required for live rates, weather and financial data.
 ```
 
@@ -84,7 +88,7 @@ Introducing Vektor: type calculations with live results, convert units and curre
 
 162/4000 characters. For a later update, write the actual changes in that build; do not reuse a launch announcement.
 
-## Private App Review notes — 1755/4000 bytes
+## Private App Review notes — 2592/4000 bytes
 
 ```text
 Vektor is a native macOS menu-bar notepad calculator. The panel opens at launch; click the Vektor menu-bar icon to show or hide it. No global summon hotkey is implemented.
@@ -97,11 +101,13 @@ tax = 20% of subtotal
 subtotal + tax
 The final result is 1,224 (display grouping follows settings). Click the SHEET header to switch sheets.
 
-The current build has purchase gating disabled: EntitlementManager.isUnlocked always returns true. StoreKit trial tracking and Settings purchase controls still exist. No purchase is needed to access this build. Public copy does not advertise a trial, unlock price or paid-feature gate.
+Purchases: the app is free to download. At first use, the paywall offers Start 60-day free trial (zero-price non-consumable app.vektor.Vektor.trial60, localized name 60-day Trial) and a one-time lifetime unlock (non-consumable app.vektor.Vektor.unlock). Both open Apple's native purchase sheet. The StoreKit price of the lifetime unlock, trial duration and loss of calculator/tool access after expiry are disclosed before starting. There is no subscription or automatic charge. The trial begins at the verified trial transaction originalPurchaseDate and ends 60 days later. Restore Purchases retrieves Apple entitlements; a restored trial retains its original end date. Saved sheets are retained after expiry.
+
+Review purchases from the paywall or Settings > Vektor Calculator. Start the free trial to review all core tools, or test the lifetime unlock in the review purchase environment. Reopen Settings > Vektor Calculator to restore. No Vektor login or third-party key is required for the core trial.
 
 Time zones, Finance, Aviation and METAR Map appear in the pane menu by default. Aviation and Map panes show a study/reference disclaimer on first use. Inline weather queries in Calculator do not show that gate. Stocks is hidden by default; enable it through the Vektor pane menu > Manage panes. Stocks requires a user-provided Financial Modeling Prep API key and coverage depends on its plan. The core calculator can be reviewed without that key.
 
-Basic arithmetic and unit conversions work offline. Currency/crypto refreshes may start at launch; live weather and financial queries need internet access. Current endpoints include api.frankfurter.dev, open.er-api.com, openexchangerates.org (optional key), api.coingecko.com, aviationweather.gov, datis.clowd.io and financialmodelingprep.com. City lookup may use Apple's geocoder. Solar events are computed locally.
+Basic arithmetic and unit conversions work offline. Currency/crypto refreshes may start at launch; live weather and financial queries need internet access. Current endpoints include api.frankfurter.dev, open.er-api.com, openexchangerates.org (optional key), api.coingecko.com, aviationweather.gov, datis.clowd.io and financialmodelingprep.com. Place search and map display may use Apple Maps/geocoding. Solar events are computed locally. Optional Calendar export asks for calendar permission and saves only the event the user confirms.
 
 Aviation tools are for study/reference, not certified operational use. Stock scores are not investment recommendations. See the hosted privacy policy for third-party processing details.
 ```
@@ -110,6 +116,6 @@ Aviation tools are for study/reference, not certified operational use. Stock sco
 
 Primary category: **Productivity**. Secondary: **Utilities**. Copyright: **© 2026 Patrick Grauel**. Minimum OS: **macOS 14.0** (from project.yml). Complete the current age-rating questionnaire; 4+ is a candidate, not a verified rating.
 
-Confirm real support and privacy destinations in the account. The earlier drafts disagree between vektor.app and GitHub Pages, and contain a placeholder email. Do not upload placeholders. Store price, territory availability, release timing and IAP state are not known from this repository. Keep public copy price-neutral until the final build and account configuration agree.
+Use the working [privacy policy](https://raw.githubusercontent.com/PatrickGrauel/Vektor/main/PRIVACY.md) and [support page](https://github.com/PatrickGrauel/Vektor/issues), and publish the current policy before submission. Configure the free 60-day Trial and paid lifetime unlock in Connect; the intended US unlock price is $25.00. Live prices, territory availability, signing and IAP review state require account setup. See [release readiness](app-store/release-readiness.md) for the remaining steps.
 
-Do not select Data Not Collected solely from the privacy manifest. Review the release SDKs and providers' retention/processing, and correct the hosted policy; see the code audit. This package does not publish to App Store Connect.
+Do not select Data Not Collected solely from the privacy manifest. Review release behavior and providers' retention/processing; see the privacy policy and release readiness checklist. This package does not publish to App Store Connect.

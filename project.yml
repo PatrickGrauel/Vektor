@@ -22,6 +22,8 @@ packages:
     path: Packages/VektorEngine
   VektorAviation:
     path: Packages/VektorAviation
+  VektorStore:
+    path: Packages/VektorStore
 
 targets:
   Vektor:
@@ -35,9 +37,11 @@ targets:
     resources:
       - path: App/Resources/Assets.xcassets
       - path: App/Resources/PrivacyInfo.xcprivacy
+      - path: App/Resources/ThirdPartyNotices.txt
     dependencies:
       - package: VektorEngine
       - package: VektorAviation
+      - package: VektorStore
     info:
       path: App/Resources/Info.plist
       properties:
@@ -49,11 +53,13 @@ targets:
         LSApplicationCategoryType: public.app-category.productivity
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: "© 2026 Patrick Grauel"
+        NSCalendarsFullAccessUsageDescription: "Vektor uses calendar access to list your calendars and save the events you choose to add from the time-zone planner."
     entitlements:
       path: App/Resources/Vektor.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        com.apple.security.personal-information.calendars: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.vektor.Vektor
@@ -61,3 +67,22 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: App/Resources/Vektor.entitlements
         ENABLE_HARDENED_RUNTIME: YES
+
+schemes:
+  Vektor:
+    build:
+      targets:
+        Vektor: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  Vektor StoreKit:
+    build:
+      targets:
+        Vektor: all
+    run:
+      config: Debug
+      storeKitConfiguration: Vektor.storekit
+    archive:
+      config: Release

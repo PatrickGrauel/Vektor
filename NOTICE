@@ -1,7 +1,7 @@
 Vektor
 ====
 
-Vektor bundles a build of math.js (https://mathjs.org) inside the TallyEngine
+Vektor bundles a build of math.js (https://mathjs.org) inside the VektorEngine
 module, loaded at runtime via JavaScriptCore as the underlying math/units
 evaluator. Numi-style natural-language sugar is layered on top in Swift.
 
@@ -23,3 +23,16 @@ math.js is distributed under the Apache 2.0 License.
 
 Vektor's natural-language calculator UX is inspired by Numi (https://numi.app)
 but contains no Numi source code; Numi's parser is not publicly available.
+
+Complete upstream license texts and math.js runtime dependency notices are
+bundled in App/Resources/ThirdPartyNotices.txt.
+
+OurAirports airport and runway data
+---------------------------------
+
+VektorAviation bundles airport and runway snapshots from OurAirports
+(https://ourairports.com/data/ and
+https://github.com/davidmegginson/ourairports-data). Airport elevation
+overrides are derived from that dataset. OurAirports releases the data
+into the public domain under the Unlicense; the full license is included
+in ThirdPartyNotices.txt. The data is not certified for operational use.

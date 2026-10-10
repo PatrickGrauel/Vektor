@@ -451,6 +451,7 @@ struct ContentView: View {
                     }
                 }
             }
+            .onDisappear { documents.flushPendingChanges() }
             // If the user disables the module they're currently viewing,
             // bounce back to Calculator so they don't end up looking at a
             // pane that's been removed from the menu.

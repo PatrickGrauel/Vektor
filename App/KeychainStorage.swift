@@ -79,53 +79,45 @@ enum KeychainStorage {
 
     /// Stores `value` (or deletes the item when `value` is empty).
     /// Returns `true` only when the Keychain actually holds the intended
-    /// final state — callers that must not lose the secret (migration,
-    /// trial stamp) check this before discarding their source copy.
+    /// final state. A failed update preserves the previous secret.
     @discardableResult
     static func set(_ value: String, for key: String) -> Bool {
-        // Idempotent: delete any existing entry first.
         let q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
         ]
-        let deleteStatus = SecItemDelete(q as CFDictionary)
-        if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
-            logger.error("SecItemDelete(\(key, privacy: .public)) failed: \(deleteStatus)")
-        }
-
-        var succeeded = true
-        if !value.isEmpty {
-            var add = q
-            add[kSecValueData as String] = Data(value.utf8)
+        let status: OSStatus
+        if value.isEmpty {
+            let deleted = SecItemDelete(q as CFDictionary)
+            status = deleted == errSecItemNotFound ? errSecSuccess : deleted
+        } else {
+            let attributes: [String: Any] = [kSecValueData as String: Data(value.utf8)]
+            let updated = SecItemUpdate(q as CFDictionary, attributes as CFDictionary)
             // NOTE: deliberately no `kSecAttrAccessible` here. That
             // attribute is only valid for data-protection-keychain items;
             // on the macOS file-based keychain it is ignored at best and
             // on several OS versions makes `SecItemAdd` fail with
             // `errSecParam`. Sandboxed file-keychain items are already
             // device-bound and ACL'd to this app.
-            let addStatus = SecItemAdd(add as CFDictionary, nil)
-            if addStatus != errSecSuccess {
-                logger.error("SecItemAdd(\(key, privacy: .public)) failed: \(addStatus)")
-                succeeded = false
+            if updated == errSecItemNotFound {
+                let add = q.merging(attributes) { _, new in new }
+                status = SecItemAdd(add as CFDictionary, nil)
+            } else {
+                status = updated
             }
         }
-
-        // Mirror presence into UserDefaults so other call sites can
-        // ask "is the key set?" without triggering a Keychain read.
-        // On a failed add the item is GONE (delete-then-add), so the
-        // flag must say false — a stale `true` would make readers
-        // believe a key exists that doesn't.
-        setPresenceFlag(key, value: !value.isEmpty && succeeded)
-
-        // Notify observers regardless of outcome — empty means "deleted",
-        // failure means "changed to absent"; views may want to react.
+        guard status == errSecSuccess else {
+            logger.error("Keychain write(\(key, privacy: .public)) failed: \(status)")
+            return false
+        }
+        setPresenceFlag(key, value: !value.isEmpty)
         NotificationCenter.default.post(
             name: changeNotification,
             object: nil,
             userInfo: [changeNotificationKeyInfoKey: key]
         )
-        return succeeded
+        return true
     }
 
     private static let logger = Logger(subsystem: "app.vektor.Vektor", category: "keychain")

@@ -187,6 +187,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// stays in the background; the cross-space collection flags + floating
     /// level let it land on — and sit above — the current full-screen Space.
     func showPanel() {
+        EntitlementManager.shared.refresh()
         makePanelIfNeeded()
         guard let panel else { return }
         if panel.isMiniaturized { panel.deminiaturize(nil) }
@@ -452,20 +453,20 @@ private struct PanelRootView: View {
     @StateObject private var ent = EntitlementManager.shared
 
     var body: some View {
-        ContentView()
+        Group {
+            if ent.accessState == .checking {
+                ProgressView("Checking App Store purchases…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if ent.isUnlocked {
+                ContentView()
+            } else {
+                PaywallView()
+            }
+        }
             .environmentObject(AppModel.shared)
             .environmentObject(ent)
             .frame(minWidth: 760, minHeight: 520)
             .background(SettingsBridge())
-            // No trial chrome on the calculator surface — during the trial the
-            // app looks completely normal. "Unlock" lives in Settings; the
-            // paywall appears only once the configured trial has run out.
-            .overlay {
-                if !ent.isUnlocked {
-                    PaywallView()
-                        .environmentObject(ent)
-                }
-            }
     }
 }
 

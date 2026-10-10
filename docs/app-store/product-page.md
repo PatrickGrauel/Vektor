@@ -10,7 +10,7 @@ Aviation is the differentiator against Soulver and Numi's demonstrated general c
 
 **The first three seconds:** the name says “Notepad Calculator”; the subtitle explains menu-bar math, units and currency; the first screenshot shows a complete six-line project estimate with a clear final result. A viewer should immediately understand “I type my own numbers; it does the math beside my notes.” The screenshot headline is **Write the math. See the answer.** The first description paragraph carries the same idea and names aviation tools for study/reference.
 
-Sell useful work with a pilot-specific reason to choose Vektor: an editable project estimate, familiar conversions and a genuine METAR retrieved by typing one line. Do not lead with six module names, broad “plain English understands anything” claims, or a long developer-origin story. The current disabled paywall cannot support “free for seven days, then unlock once.” Price and purchase claims stay out of the public package.
+Sell useful work with a pilot-specific reason to choose Vektor: an editable project estimate, familiar conversions and a genuine METAR retrieved by typing one line. Do not lead with six module names, broad “plain English understands anything” claims, or a long developer-origin story. The release offers an Apple-confirmed 60-day free trial followed by a one-time lifetime unlock. Public copy must disclose that continued access requires an in-app purchase; do not include a specific price in the screenshots or preview. The app shows Apple's localized price before the user starts the trial.
 
 ## Competing in search and on the page
 
@@ -40,11 +40,11 @@ Use the native window capture for each panel. Preserve the complete real app UI 
 
 | Order / file stem | Headline | Subline | Visible proof |
 | --- | --- | --- | --- |
-| 01-project-estimate | Write the math. See the answer. | Keep your notes and calculations on the same sheet. | Named inputs, percent calculation, 1 224.00 final result |
-| 02-conversions | Conversions, in plain language. | Units, percentages and discounts, right where you type. | Four different useful typed expressions |
-| 03-metar | Your weather briefing in one line. | Weather reports and conversions for study and reference. | Genuine KSFO METAR with freshness, plus speed/pressure conversions |
-| 04-travel-money | Compare currencies in one place. | Live rates for travel money, with the source in view. | Real EUR/USD, THB/EUR and BTC/USD outputs and provider source |
-| 05-changing-inputs | Change a number. Rethink the plan. | Variables keep the related calculations up to date. | Six guests share 216, final result 36.00 |
+| 01-project-estimate | Write the math. See the answer. | Notes and calculations together. 60-day free trial; one-time unlock after. | Named inputs, percent calculation, 1 224.00 final result |
+| 02-conversions | Conversions, in plain language. | Convert units and percentages. 60-day free trial; one-time unlock after. | Four different useful typed expressions |
+| 03-metar | Your weather briefing in one line. | For study and reference. 60-day free trial; one-time unlock after. | Genuine KSFO METAR with freshness, plus speed/pressure conversions |
+| 04-travel-money | Compare currencies in one place. | Current rates, source shown. 60-day free trial; one-time unlock after. | Real EUR/USD, THB/EUR and BTC/USD outputs and provider source |
+| 05-changing-inputs | Change a number. Rethink the plan. | Related results update together. 60-day free trial; one-time unlock after. | Six guests share 216, final result 36.00 |
 | Optional 06-metar-map | Airport weather by flight category | METAR colors for study and reference. | Actual METAR Map pane and its flight-category legend |
 
 ### 1. Project estimate
@@ -84,7 +84,7 @@ METAR KSFO
 
 Wait for a genuine KSFO report and preserve its freshness/status indicator. Weather availability and issuance time vary. Verified deterministic conversion values: 222.24 km/h and 1 013.21 hPa. Calculator's inline weather query does not show the separate Aviation/Map disclaimer gate; the caption must still say study/reference. Do not imply flight safety, certification, a clearance or approved runway selection.
 
-If the complete report does not fit legibly, remove the METAR line, change the headline to **Aviation conversions, in one place.** and the subline to **Speed and pressure conversions for study and reference.** Update the manifest before rendering. This preserves the previous conversion-only fallback without a misleading weather headline. Do not hide stale/error status or invent weather.
+If the complete report does not fit legibly, remove the METAR line, change the headline to **Aviation conversions, in one place.** and the subline to **For study and reference. 60-day free trial; one-time unlock after.** Update the manifest before rendering. This preserves the previous conversion-only fallback without a misleading weather headline. Do not hide stale/error status or invent weather.
 
 ### 4. Travel money
 
@@ -119,4 +119,4 @@ If produced, append `06-metar-map` to the manifest with its real capture path, d
 
 Metadata and capture recipes are ready to review. Raw screenshots, final uploaded frames and a recorded video are separate production outputs; tooling tests use conspicuously synthetic fixtures and do not create uploadable app evidence. Record the exact release build/commit alongside captures before rendering.
 
-Before submission, reconcile the disabled gate with the remaining trial/unlock controls and the actual Connect IAP configuration; correct the hosted privacy policy; verify support/privacy URLs and contact email; complete age-rating and privacy questionnaires for the shipped build; inspect all images and the encoded video; upload screenshots in filename order and select the preview's actual poster frame. None of these account facts can be inferred from source. See [code-audit.md](code-audit.md) for the concrete draft contradictions.
+Before submission, complete the account and release checks in [release-readiness.md](release-readiness.md), including both non-consumable IAPs, Apple sandbox purchases, the updated hosted privacy policy and the age-rating/privacy questionnaires. Capture the final trial-enabled release build, inspect all images and the encoded video, upload screenshots in filename order and select the preview's actual poster frame. Source changes do not prove that account configuration or submission is complete.

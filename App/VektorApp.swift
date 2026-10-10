@@ -58,8 +58,8 @@ struct VektorApp: App {
 /// not Menu-Bar-Only mode).
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Load the unlock product, restore prior purchases, and start the
-        // trial clock before the panel appears so gating is correct frame-one.
+        // Read verified App Store purchases before showing the calculator.
+        // The free trial begins only after its Apple purchase is confirmed.
         EntitlementManager.shared.start()
         MenuBarController.shared.install()
         MenuBarController.shared.applyActivationPolicy()
@@ -75,4 +75,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MenuBarController.shared.showPanel()
         return true
     }
+
 }

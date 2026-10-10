@@ -1,12 +1,12 @@
 # Mac App Preview: 24-second storyboard and production pipeline
 
-The preview demonstrates real Vektor use. It is **1920×1080 landscape, 24 seconds, 30 fps**, separate from the 2880×1800 screenshot masters. It should make sense during muted autoplay. No trial/unlock scene, unsupported global shortcut, filmed hardware, prices or animated imitation of the app.
+The preview demonstrates real Vektor use. It is **1920×1080 landscape, 24 seconds, 30 fps**, separate from the 2880×1800 screenshot masters. It should make sense during muted autoplay. The footage uses an active trial or lifetime unlock. Include a readable “60-day free trial; one-time purchase for continued access” overlay so featured tools are not presented as permanently free. Do not show a specific price, unsupported global shortcut, filmed hardware or animated imitation of the app.
 
 Apple's current Mac preview format is 16:9 while Mac screenshots are 16:10, so the preview can appear in **A Closer Look** rather than the main screenshot gallery. The first screenshot therefore remains the primary conversion asset. [Apple preview specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/app-preview-specifications/), [App Preview guidance](https://developer.apple.com/app-store/app-previews/), [Review Guidelines 2.3.4](https://developer.apple.com/app-store/review/guidelines/#accurate-metadata).
 
 ## Storyboard
 
-All times refer to the final timeline, not raw take duration. Use direct cuts and real-time app interactions; allow the evaluation to finish before the hold. A caption can sit in an unused strip of the app canvas without covering inputs or answers. Use short white/cream text with a dark backing where needed, sized approximately 48–56 px at 1080p. No caption-only intro or end card. Keep every input and result readable at reduced size.
+All times refer to the final timeline, not raw take duration. Use direct cuts and real-time app interactions; allow the evaluation to finish before the hold. A caption can sit in an unused strip of the app canvas without covering inputs or answers. Use short white/cream text with a dark backing where needed, sized approximately 48–56 px at 1080p. No caption-only intro or end card. Keep every input and result readable at reduced size. The trial/purchase disclosure can use a separate unobstructed lower caption, visible during the opening and final holds.
 
 | Time | Screen / exact action | Overlay | End-of-shot proof |
 | --- | --- | --- | --- |

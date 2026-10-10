@@ -12,7 +12,7 @@ Verified online on **11 October 2026**. These are the public specifications; App
 | Keywords | 100 **bytes** in Connect reference | Use ASCII so character and byte counts agree. Each keyword must exceed two characters. |
 | Description | 4,000 characters | Plain text; line breaks supported, HTML unsupported. |
 | What’s New | 4,000 characters | Unavailable for the first version; required for subsequent versions. |
-| Review notes | 4,000 bytes | Private to App Review; explain menu-bar launch and disabled purchase gating. |
+| Review notes | 4,000 bytes | Private to App Review; explain menu-bar launch, the Apple-confirmed free trial and lifetime unlock. |
 
 Sources: [App information](https://developer.apple.com/help/app-store-connect/reference/app-information/app-information/), [Platform version information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information/).
 
@@ -63,7 +63,7 @@ A different preview/screenshot aspect ratio moves the preview to **A Closer Look
 
 Only screen captures of the app itself may form the footage; explanatory overlays/narration are allowed. Avoid filmed hardware, people using the Mac, fabricated app animation, or scenes implying unsupported behavior. [App Review Guidelines, 2.3.4](https://developer.apple.com/app-store/review/guidelines/)
 
-Apple recommends native-resolution UI, straightforward transitions, readable copy and a compelling footage-derived poster. Autoplay starts muted: the story must work without audio. Do not show specific prices or references that quickly date. Disclose featured paid features/subscriptions/login when applicable; use authorized material appropriate for all ages. For the current disabled paywall, omit unlock/trial scenes and pricing promises. A silent stereo AAC track is this kit’s conservative export choice; music is optional. [App Previews](https://developer.apple.com/app-store/app-previews/)
+Apple recommends native-resolution UI, straightforward transitions, readable copy and a compelling footage-derived poster. Autoplay starts muted: the story must work without audio. Do not show specific prices or references that quickly date. Disclose featured paid features/subscriptions/login when applicable; use authorized material appropriate for all ages. For the trial-enabled release, disclose the free trial and one-time purchase required for continued access; do not display a fixed storefront price. A silent stereo AAC track is this kit’s conservative export choice; music is optional. [App Previews](https://developer.apple.com/app-store/app-previews/)
 
 ## Release metadata that needs verification outside source code
 
@@ -71,7 +71,7 @@ Age rating is generated from the questionnaire, with OS-specific and regional va
 
 Apple defines collection around off-device transmission retained beyond servicing a real-time request, including relevant third-party handling. On-device-only processing is not collection; absence of analytics does not alone prove “Data Not Collected.” Audit providers’ retained IP/request data, the release configuration and any SDKs before choosing that label. The draft claim that fetching third-party content automatically “doesn’t count” is too categorical. [App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/)
 
-Privacy Policy URL and Support URL need real deployed destinations and contact details. Store price and purchase configuration are account state, not proved by a StoreKit fixture. Do not represent a disabled gate as a seven-day trial. First-release What’s New is unavailable, so preserve any launch blurb as a draft instead of an upload field.
+Privacy Policy URL and Support URL need real deployed destinations and contact details. Store price and purchase configuration are account state, not proved by a StoreKit fixture. Configure both the zero-price 60-day trial and paid lifetime-unlock IAPs to match the release build. First-release What’s New is unavailable, so preserve any launch blurb as a draft instead of an upload field.
 
 ## Competitor evidence and implications
 

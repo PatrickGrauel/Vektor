@@ -90,8 +90,8 @@ def listing(data):
         text += f"## What's New — {len(value)}/4000 characters\n\n```text\n{value}\n```\n\n"
     text += f"## Private App Review notes — {len(data['reviewNotes'].encode('utf-8'))}/4000 bytes\n\n```text\n{data['reviewNotes']}\n```\n\n"
     text += "## Remaining Connect fields\n\nPrimary category: **Productivity**. Secondary: **Utilities**. Copyright: **© 2026 Patrick Grauel**. Minimum OS: **macOS 14.0** (from project.yml). Complete the current age-rating questionnaire; 4+ is a candidate, not a verified rating.\n\n"
-    text += "Confirm real support and privacy destinations in the account. The earlier drafts disagree between vektor.app and GitHub Pages, and contain a placeholder email. Do not upload placeholders. Store price, territory availability, release timing and IAP state are not known from this repository. Keep public copy price-neutral until the final build and account configuration agree.\n\n"
-    text += "Do not select Data Not Collected solely from the privacy manifest. Review the release SDKs and providers' retention/processing, and correct the hosted policy; see the code audit. This package does not publish to App Store Connect.\n"
+    text += "Use the working [privacy policy](https://raw.githubusercontent.com/PatrickGrauel/Vektor/main/PRIVACY.md) and [support page](https://github.com/PatrickGrauel/Vektor/issues), and publish the current policy before submission. Configure the free 60-day Trial and paid lifetime unlock in Connect; the intended US unlock price is $25.00. Live prices, territory availability, signing and IAP review state require account setup. See [release readiness](app-store/release-readiness.md) for the remaining steps.\n\n"
+    text += "Do not select Data Not Collected solely from the privacy manifest. Review release behavior and providers' retention/processing; see the privacy policy and release readiness checklist. This package does not publish to App Store Connect.\n"
     return text
 
 
