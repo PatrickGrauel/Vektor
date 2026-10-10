@@ -74,12 +74,8 @@ final class DocumentStore: ObservableObject {
         let loaded = Self.load()
         var initial: [VektorDocument]
         if loaded.isEmpty {
-            // Seed first launch with a welcoming hub doc + eight
-            // topic-focused docs it links to via `@references`. The
-            // welcome doc is intentionally short — it's an index, not
-            // a tutorial. Each topic page is short, copy-pasteable,
-            // and runs in real time so the user sees something
-            // useful within seconds of clicking through.
+            // Seed first launch with one editable welcome page.
+            // Topic examples are available from the "+" menu.
             initial = Self.welcomePackage()
         } else {
             initial = loaded
@@ -289,66 +285,50 @@ final class DocumentStore: ObservableObject {
     // accessible via the "+ from example…" menu — users pull them in
     // on demand when they want a topic-focused reference page.
 
-    /// One self-contained welcome doc the user can edit, gut, or
-    /// delete. Pinned so it stays at the top until they explicitly
-    /// unpin. Cross-references `@math`, `@units` etc. all render as
-    /// "muted + dotted" until the user inserts those templates —
-    /// which is itself a discovery hint pointing at the menu.
+    /// One self-contained welcome doc the user can edit or delete.
+    /// Pinned so it stays at the top until they explicitly unpin.
     private static func welcomePackage() -> [VektorDocument] {
         let welcome = VektorDocument(content: """
         # Welcome to Vektor
-        // A calculator that thinks too much. Type any line — the
-        // answer appears in the gutter on the right as you type.
-        // Edit any line below; the result updates live.
+        // A notepad that does the math.
+        // Write a calculation. See the answer on the right.
+        // Try changing any number below.
 
-        # Math
+        # Everyday math
         2 + 2
-        sqrt(2)
-        sin(45°) ^ 2 + cos(45°) ^ 2     // hello there, Pythagoras
+        15% off 240
 
-        # Units (use `in` or `to`)
+        # Convert units
         10 mi in km
         180 lbs in kg
         100 degF in degC
 
-        # Money (live FX, no key needed)
+        # Convert money
+        // Currency conversions use live exchange rates.
         100 EUR in USD
         1 BTC in USD
 
-        # Time
+        # Time and dates
         Berlin time
         1430 Zulu in HKT
-        77/55 in hours                   // duration from a quotient
-
-        # Dates
         today
-        days between today and 2026-12-25
-        age 1990-03-15
+
+        # Reuse numbers
+        // Change rent below to update the yearly total too.
+        rent = 1450 EUR
+        rent * 12                        // yearly rent
 
         # Aviation
-        METAR EDDM
-        TAF KSFO
-        RWY EDDM
+        METAR EDDM                       // weather report
+        TAF KSFO                         // forecast
+        RWY EDDM                         // runway details
 
-        # Variables and `prev`
-        rent = 1450 EUR
-        rent * 12                        // a year of rent
-        100 / 7
-        prev * 12                        // builds on the line above
-
-        # Syntax
-        // #  heading       → orange section header
-        // // comment       → muted line, no result
-        // @slug            → jump link; muted+dotted means "no doc yet"
+        # Make it yours
+        // Keep experimenting here, or press ⌘N for a blank page.
+        // Press Tab on an empty page to insert a sample calculation.
         //
-        // Press ⌘? any time for the full quick reference. Or hit Tab
-        // on any blank line to drop in a sample expression.
-
-        # Now make it yours
-        // Delete every line above — Vektor won't take it personally.
-        // ⌘N for a fresh page. The + button → "From example…" drops
-        // in a topic page (@math, @units, @aviation…) if you want a
-        // dedicated reference around.
+        // ⌘? opens the quick reference.
+        // More examples: + → "From example…"
         """, isPinned: true)
 
         return [welcome]
