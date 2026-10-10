@@ -119,27 +119,6 @@ final class VektorAviationTests: XCTestCase {
         XCTAssertEqual(d, 40, accuracy: 0.001)
     }
 
-    // MARK: Weight & balance
-
-    func testCGSimple() {
-        let wb = WeightBalance(stations: [
-            .init(name: "Empty",  weight: 1700, armIn: 32),
-            .init(name: "Pilot",  weight: 170,  armIn: 37),
-            .init(name: "Fuel",   weight: 240,  armIn: 48),
-        ])
-        let r = wb.compute()
-        XCTAssertEqual(r.totalWeight, 2110, accuracy: 0.001)
-        XCTAssertEqual(r.cg, (1700*32 + 170*37 + 240*48) / 2110, accuracy: 0.001)
-    }
-
-    func testEnvelopeInsideOutside() {
-        let env = WeightBalance.Envelope(vertices: [
-            (32, 1500), (40, 1500), (40, 2300), (32, 2300)
-        ])
-        XCTAssertTrue(env.contains(cg: 36, weight: 2000))
-        XCTAssertFalse(env.contains(cg: 31, weight: 2000))
-    }
-
     // MARK: METAR
 
     func testMetarKSFOExample() {

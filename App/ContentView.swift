@@ -59,7 +59,7 @@ enum Pane: String, CaseIterable, Identifiable {
     var moduleDescription: String {
         switch self {
         case .finance:      return "Loan, mortgage, real-estate deal analysis, tip & split."
-        case .aviation:     return "METAR / TAF / ATIS, E6B flight computer, weight & balance."
+        case .aviation:     return "METAR / TAF / ATIS and E6B flight computer."
         case .map:          return "Interactive airport map with live METAR overlay (VFR / MVFR / IFR / LIFR colouring)."
         case .stocks:       return "Score a public company against Warren Buffett's Durable Competitive Advantage framework."
         default:            return ""

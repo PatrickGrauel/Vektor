@@ -8,14 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		0B1BD7B4355E24B7B411FB26 /* DocumentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0589711226E15B0A02B0A5 /* DocumentStore.swift */; };
-		0F3166EC422CA197B3BAB116 /* AvWeightBalance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B9AE240E02121A56E6E9380 /* AvWeightBalance.swift */; };
 		0F4CFFD4175AD14B32037991 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205E3E92230CFBF99694D8E3 /* RootView.swift */; };
 		1DA23D21968D57B133106FB1 /* AviationPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7F71B84D8D9B121E6A3F97 /* AviationPane.swift */; };
 		22AF438493220E0947853D19 /* AvMetarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 502306762401FC0CC4071F2D /* AvMetarView.swift */; };
 		268FBCFF1A2D2C826D6A1E8C /* RealEstateMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F76156AA1F4C8F81B01EFC /* RealEstateMath.swift */; };
 		357ED9E8903794DED1545F2B /* VektorEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 1A764EAF3C1D3A3A4D0FF2A8 /* VektorEngine */; };
 		37B472FAFAEC91A7D41BF53D /* FinanceUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE6F5992CBAAC30DCF7D3A11 /* FinanceUI.swift */; };
-		385739C6C69EB9FCFA0A5779 /* WBEnvelopeChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC4CB95F26F57E5D11B4712 /* WBEnvelopeChart.swift */; };
 		518C0C3BAC024856AE6A18CF /* CalculatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE97B007E0CB11E8C1E7DCA1 /* CalculatorView.swift */; };
 		5D468A31CA1C64AF37CF62B7 /* AvE6BTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 468CDB028D0008B8DBB6B196 /* AvE6BTools.swift */; };
 		6B3D8E04258798AD53E3062B /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE7EF0FD6088C659E5AB626 /* AppModel.swift */; };
@@ -47,10 +45,8 @@
 		21F76156AA1F4C8F81B01EFC /* RealEstateMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealEstateMath.swift; sourceTree = "<group>"; };
 		2508AE2A5FAA7B5BE8DFFA8B /* VektorEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; name = VektorEngine; path = ../Packages/VektorEngine; sourceTree = SOURCE_ROOT; };
 		2B1CAC6B580079B82A301C84 /* VektorPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VektorPadApp.swift; sourceTree = "<group>"; };
-		3B9AE240E02121A56E6E9380 /* AvWeightBalance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvWeightBalance.swift; sourceTree = "<group>"; };
 		3D7BF75602F2BB12E49CD168 /* FinanceSimpleForms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceSimpleForms.swift; sourceTree = "<group>"; };
 		468CDB028D0008B8DBB6B196 /* AvE6BTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvE6BTools.swift; sourceTree = "<group>"; };
-		4EC4CB95F26F57E5D11B4712 /* WBEnvelopeChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WBEnvelopeChart.swift; path = ../../../App/Aviation/WBEnvelopeChart.swift; sourceTree = "<group>"; };
 		502306762401FC0CC4071F2D /* AvMetarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvMetarView.swift; sourceTree = "<group>"; };
 		56CCD685F98B5BADC059E58A /* TimezoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimezoneView.swift; sourceTree = "<group>"; };
 		94542AF96DCDA5682079CD99 /* FinanceListForms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceListForms.swift; sourceTree = "<group>"; };
@@ -151,7 +147,6 @@
 			isa = PBXGroup;
 			children = (
 				AB0E368C5B6780051FCAB3C2 /* AviationDisclaimerView.swift */,
-				4EC4CB95F26F57E5D11B4712 /* WBEnvelopeChart.swift */,
 			);
 			name = Shared;
 			sourceTree = "<group>";
@@ -171,7 +166,6 @@
 				468CDB028D0008B8DBB6B196 /* AvE6BTools.swift */,
 				CC7F71B84D8D9B121E6A3F97 /* AviationPane.swift */,
 				502306762401FC0CC4071F2D /* AvMetarView.swift */,
-				3B9AE240E02121A56E6E9380 /* AvWeightBalance.swift */,
 			);
 			path = Aviation;
 			sourceTree = "<group>";
@@ -282,7 +276,6 @@
 				6B3D8E04258798AD53E3062B /* AppModel.swift in Sources */,
 				5D468A31CA1C64AF37CF62B7 /* AvE6BTools.swift in Sources */,
 				22AF438493220E0947853D19 /* AvMetarView.swift in Sources */,
-				0F3166EC422CA197B3BAB116 /* AvWeightBalance.swift in Sources */,
 				D498C7B1DE020A1CD9DCAA74 /* AviationDisclaimerView.swift in Sources */,
 				1DA23D21968D57B133106FB1 /* AviationPane.swift in Sources */,
 				8C3BC848816F11F17922D975 /* CalcEditor.swift in Sources */,
@@ -307,7 +300,6 @@
 				A7D698BD515559D13C97A702 /* Theme.swift in Sources */,
 				86C4200BA2C8B6509DB8392D /* TimezoneView.swift in Sources */,
 				DFF211321BDFD6F9BD618700 /* VektorPadApp.swift in Sources */,
-				385739C6C69EB9FCFA0A5779 /* WBEnvelopeChart.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

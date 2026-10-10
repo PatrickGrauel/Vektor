@@ -1,11 +1,10 @@
 import Foundation
 import SwiftUI
-import VektorAviation
 
 /// JSON-backed `UserDefaults` store for any `Codable & Identifiable` type.
 ///
 /// Replaces the three near-identical concrete stores we used to have
-/// (LoanStore, RealEstateStore, AircraftStore) with one shared shape:
+/// (LoanStore, RealEstateStore) with one shared shape:
 /// `@Published saved`, `add(...)` with upsert, `remove(id:)`, plus the
 /// load + persist on init / mutate.
 ///
@@ -70,7 +69,6 @@ final class PersistentStore<T: Codable & Identifiable>: ObservableObject where T
 
 typealias LoanStore       = PersistentStore<SavedLoan>
 typealias RealEstateStore = PersistentStore<SavedRealEstateDeal>
-typealias AircraftStore   = PersistentStore<SavedAircraft>
 
 extension PersistentStore where T == SavedLoan {
     /// Loan scenarios dedupe by **name**: saving "Mortgage A" twice
@@ -101,13 +99,5 @@ extension PersistentStore where T == SavedRealEstateDeal {
                 return copy
             }
         )
-    }
-}
-
-extension PersistentStore where T == SavedAircraft {
-    /// Aircraft dedupe by **id**: the editor mutates a copy of the
-    /// existing aircraft and saves it back under the same UUID.
-    static func aircraft() -> AircraftStore {
-        AircraftStore(storageKey: "vektor.wb.savedAircraft")
     }
 }

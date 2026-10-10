@@ -64,7 +64,7 @@ MORE TOOLS WHEN YOU NEED THEM
 
 Time zones: compare cities and convert times.
 Finance: explore loan payments, savings goals, travel budgets, tip and split, and other scenarios.
-Aviation: retrieve METAR, TAF and ATIS reports, explore the weather map, and use E6B and weight-and-balance tools for study and reference. Aviation features are not certified for flight planning, navigation or aircraft operation. Cross-check official sources and your aircraft documentation.
+Aviation: retrieve METAR, TAF and ATIS reports, explore the weather map, and use E6B tools for study and reference. Aviation features are not certified for flight planning, navigation or aircraft operation. Cross-check official sources and your aircraft documentation.
 Stocks: an optional company scorecard using third-party financial statements. Enable it in Manage panes and provide your own Financial Modeling Prep API key. Coverage depends on your provider plan. Scores are not investment advice or buy/sell recommendations.
 
 KEEP YOUR WORK LOCAL

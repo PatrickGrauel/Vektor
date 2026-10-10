@@ -4,7 +4,7 @@ import SwiftUI
 /// JSON-backed `UserDefaults` store for any `Codable & Identifiable` type.
 ///
 /// Replaces the three near-identical concrete stores we used to have
-/// (LoanStore, RealEstateStore, AircraftStore) with one shared shape:
+/// (LoanStore, RealEstateStore) with one shared shape:
 /// `@Published saved`, `add(...)` with upsert, `remove(id:)`, plus the
 /// load + persist on init / mutate.
 ///
@@ -61,6 +61,6 @@ final class PersistentStore<T: Codable & Identifiable>: ObservableObject where T
     }
 }
 
-// Concrete factories/typealiases (LoanStore, RealEstateStore, AircraftStore)
+// Concrete factories/typealiases (LoanStore, RealEstateStore)
 // from the macOS app are intentionally omitted on iOS — construct
 // `PersistentStore<T>(storageKey:)` directly with the model you need.

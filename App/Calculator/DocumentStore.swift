@@ -534,7 +534,7 @@ final class DocumentStore: ObservableObject {
         1500 fpm * 5 min in ft           // descent in 5 minutes at 1500 fpm
 
         # The richer aviation tools
-        // Wind triangles, W&B, E6B all live in the Aviation pane.
+        // Wind triangles and E6B live in the Aviation pane.
         // Back to @welcome. Or see @stocks for the investing pane.
         """)
 

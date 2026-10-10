@@ -29,9 +29,6 @@ struct AviationPane: View {
                 navLink("Runway wind", "Head / cross components", "airplane.departure") { RunwayWindView() }
                 navLink("Top of descent", "Where to start down", "arrow.down.right") { TODView() }
             }
-            Section("Mass & balance") {
-                navLink("Weight & balance", "CG & envelope check", "scalemass.fill") { WeightBalanceView() }
-            }
         }
         .navigationTitle("Aviation")
         .navigationBarTitleDisplayMode(.inline)

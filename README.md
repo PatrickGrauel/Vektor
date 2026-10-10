@@ -1,6 +1,6 @@
 # Vektor
 
-A native macOS calculator built for pilots. A natural-language scratchpad on one side, first-class aviation tooling on the other — METAR/TAF/ATIS decoding with freshness indicators, E6B flight computer, weight & balance. Plus optional Finance and Buffett-style Stocks analysis modules for when you're not in the cockpit.
+A native macOS calculator built for pilots. A natural-language scratchpad on one side, first-class aviation tooling on the other — METAR/TAF/ATIS decoding with freshness indicators, E6B flight computer. Plus optional Finance and Buffett-style Stocks analysis modules for when you're not in the cockpit.
 
 ## Features
 
@@ -19,7 +19,6 @@ A native macOS calculator built for pilots. A natural-language scratchpad on one
 - **`RWY EDDM`** — every runway with length, surface, and true heading. **`sun EDDM`** — sunrise, sunset, civil-twilight end for today.
 - **METAR Map** — pan a world map of airports colour-coded by flight category (VFR / MVFR / IFR / LIFR). Click any pin for the decoded METAR. Tier-aware density (large airports only at world span, +medium at country, +small at regional) keeps the surface responsive at every zoom.
 - **E6B** — wind triangle, density altitude, runway crosswind/headwind component, top-of-descent, fuel.
-- **Weight & balance** — saved per-aircraft profiles.
 
 **Stocks** *(off by default — enable in Settings → Tools)*
 - **DCA scorecard** — type a US-listed ticker and get a Warren Buffett-style "Durable Competitive Advantage" 6-axis scorecard (Pricing Power, Cost Discipline, Earnings Quality, Capital Efficiency, Balance Sheet Safety, Capital Allocation), each scored 0–10 against the rubric from *Warren Buffett and the Interpretation of Financial Statements* (Mary Buffett & David Clark).
@@ -38,7 +37,7 @@ Powered by [Financial Modeling Prep](https://site.financialmodelingprep.com/deve
 **Vektor is NOT certified, approved, audited, or operationally validated for flight planning, navigation, or operation of an aircraft.** It is a hobbyist productivity tool. Its aviation features — METAR / TAF / ATIS retrieval, E6B calculations, weight & balance, density altitude, fuel — are provided for **situational awareness and study only**.
 
 - **Weather data is third-party.** METAR / TAF / ATIS come from external APIs (aviationweather.gov, datis.clowd.io, etc.) and may be delayed, incomplete, cached, or unavailable.
-- **Calculations are generic estimates.** E6B, density altitude, fuel, and weight & balance figures are computed from standard atmospheric and aerodynamic models. They do **not** account for your specific aircraft's actual performance, equipment, or condition.
+- **Calculations are generic estimates.** E6B, density altitude, and fuel figures are computed from standard atmospheric and aerodynamic models. They do **not** account for your specific aircraft's actual performance, equipment, or condition.
 - **Always cross-check against official sources** — official weather products, NOTAMs, your aircraft's POH/AFM, and certified flight planning systems — before and during every flight.
 - **The Pilot in Command remains solely responsible** for the safe conduct of the flight per applicable regulations (14 CFR § 91 in the U.S., EASA Air OPS / Part-NCO / SERA in the EU, or your operating state's equivalent). Using Vektor does not relieve the PIC of any obligation.
 
@@ -135,7 +134,7 @@ The math.js JS bundle at `Packages/VektorEngine/Sources/VektorEngine/Resources/m
 - `App/` — SwiftUI macOS shell. `Calculator/`, `Aviation/`, `Finance/`, `Stocks/`, `Timezone/`, `Map/` (METAR map), `Settings/`, plus the menu bar controller.
 - `App/Stocks/` — DCA scoring engine, FMP API client (on-disk cache + UTC-aligned daily call budget + plan-aware hard cap), drill-down chart canvas with Buffett-rubric threshold bands, and the radar/sparkline/manage-popover UI.
 - `Packages/VektorEngine` — `JSContext` + math.js bundle + a Swift preprocessor for natural-language sugar (`5% off $40`, `$20 in eur`, `today + 2 weeks`, `sum`, `prev`) + host bridges for timezone / FX / crypto / aviation / METAR cache.
-- `Packages/VektorAviation` — pure-Swift E6B math, weight & balance, atmosphere model, METAR/TAF parser.
+- `Packages/VektorAviation` — pure-Swift E6B math, atmosphere model, METAR/TAF parser.
 - `JS/` — npm workspace; esbuild bundles math.js into the resources directory above.
 
 ## Acknowledgements

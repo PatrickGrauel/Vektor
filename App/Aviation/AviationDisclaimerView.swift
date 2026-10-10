@@ -16,7 +16,7 @@ struct AviationDisclaimerView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 bullet("**Weather data is third-party** (aviationweather.gov, datis.clowd.io) and may be delayed, cached, incomplete, or unavailable.")
-                bullet("**Calculations are generic estimates.** E6B, density altitude, fuel, and weight & balance figures are computed from standard atmospheric and aerodynamic models. They do not account for your aircraft's actual performance, equipment, or condition.")
+                bullet("**Calculations are generic estimates.** E6B, density altitude, and fuel figures are computed from standard atmospheric and aerodynamic models. They do not account for your aircraft's actual performance, equipment, or condition.")
                 bullet("**Always cross-check** against official weather products, NOTAMs, your aircraft's POH/AFM, and certified flight planning systems before and during every flight.")
                 bullet("**The Pilot in Command remains solely responsible** for the safe conduct of the flight per applicable regulations (14 CFR § 91 in the U.S., EASA Air OPS / SERA in the EU, or your operating state's equivalent).")
                 bullet("Provided **AS IS, WITHOUT WARRANTY OF ANY KIND**. No liability accepted for any direct, indirect, incidental, special, or consequential damages — including loss of life, personal injury, property damage, or loss of aircraft — arising from use of this software.")

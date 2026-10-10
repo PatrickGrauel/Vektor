@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Three-tab aviation pane: METAR/TAF/ATIS → E6B → Weight & Balance.
+/// Two-tab aviation pane: METAR/TAF/ATIS → E6B.
 /// Same visual rhythm as Finance — segmented tab strip at the top, themed
 /// Form below — so the pilot tools live under one pane menu entry instead
 /// of three. Order follows a typical pre-flight workflow: weather →
@@ -49,7 +49,6 @@ struct AviationPane: View {
                 switch tab {
                 case .metar:  MetarView()
                 case .e6b:    E6BView()
-                case .wb:     WeightBalanceView()
                 }
             }
         }
@@ -57,13 +56,12 @@ struct AviationPane: View {
 }
 
 enum AviationTab: String, CaseIterable, Identifiable {
-    case metar, e6b, wb
+    case metar, e6b
     var id: String { rawValue }
     var label: String {
         switch self {
         case .metar: return "METAR / TAF"
         case .e6b:   return "E6B"
-        case .wb:    return "Weight & Balance"
         }
     }
 }

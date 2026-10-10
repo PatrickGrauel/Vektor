@@ -54,7 +54,7 @@ struct StatusBadge: View {
 //
 // Replaces every TextField-with-format-number-paired-with-a-Slider
 // across the form panes. Clamps to the slider's range on commit so
-// `course = 999°` (E6B) and `weight = -50` (W&B) can't propagate into
+// `course = 999°` (E6B) and negative inputs can't propagate into
 // downstream math. Locale-aware (POSIX) so comma/period quirks don't
 // silently mis-parse.
 
