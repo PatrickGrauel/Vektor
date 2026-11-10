@@ -68,4 +68,4 @@ Vektor is a general-purpose calculator and is not marketed as a children's app. 
 
 ## Changes and contact
 
-We may update this policy as Vektor changes. The policy hosted at the Privacy Policy URL in the App Store listing is the current published version. For questions, contact the developer through [Vektor support](https://github.com/PatrickGrauel/vektor-support/issues). GitHub issues are public: do not post API keys, payment information or other private details. The App Store listing may also provide an additional contact method.
+We may update this policy as Vektor changes. The policy hosted at the Privacy Policy URL in the App Store listing is the current published version. For questions, contact the developer through [Vektor support](https://github.com/PatrickGrauel/Vektor/issues). GitHub issues are public: do not post API keys, payment information or other private details. The App Store listing may also provide an additional contact method.

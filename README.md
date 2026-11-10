@@ -4,7 +4,7 @@ Vektor is a menu-bar notepad calculator for the Mac.
 
 ## Get help
 
-- **Report a problem or ask a question:** [open an issue](https://github.com/PatrickGrauel/vektor-support/issues/new). Say which macOS version and which Vektor version you use (Settings → About), what you typed, what you expected and what you got. A screenshot helps.
+- **Report a problem or ask a question:** [open an issue](https://github.com/PatrickGrauel/Vektor/issues/new). Say which macOS version and which Vektor version you use (Settings → About), what you typed, what you expected and what you got. A screenshot helps.
 - **Issues are public.** Don't post API keys, purchase receipts, payment details or other private information.
 - **In the app:** Settings → About → Documentation explains every feature, including desktop widgets and the aviation tools.
 
